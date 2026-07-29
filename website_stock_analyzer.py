@@ -1,4 +1,8 @@
 import datetime as dt
+from io import BytesIO
+import openpyxl
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -18,29 +22,21 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-    /* Pagrindinio puslapio fonas ir tekstas */
     .stApp {
         background-color: #FFFFFF !important;
         color: #0F172A !important;
     }
-
-    /* Šoninė juosta */
     [data-testid="stSidebar"] {
         background-color: #F8FAFC !important;
         border-right: 1px solid #E2E8F0 !important;
     }
-
-    /* Įvedimo laukelių pavadinimai */
     p, span, label, [data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] p {
         color: #0F172A !important;
     }
-
     label, [data-testid="stWidgetLabel"] {
         font-weight: 600 !important;
         margin-bottom: 4px !important;
     }
-
-    /* Metrikų kortelės */
     [data-testid="stMetricValue"] {
         font-size: 1.4rem !important;
         font-weight: 700 !important;
@@ -49,22 +45,16 @@ st.markdown(
     [data-testid="stMetricLabel"] p {
         color: #475569 !important;
     }
-
-    /* Antraštės */
     h1, h2, h3, h4, h5, h6 {
         color: #0F172A !important;
         font-weight: 700 !important;
     }
-
-    /* Tekstinis įvedimo laukas */
     .stTextInput input {
         background-color: #FFFFFF !important;
         color: #0F172A !important;
         border: 1.5px solid #0F172A !important;
         border-radius: 10px !important;
     }
-
-    /* 1. EPS RATING (Number Input) */
     div[data-testid="stNumberInput"] > div > div {
         background-color: #FFFFFF !important;
         border: 1.5px solid #0F172A !important;
@@ -76,89 +66,25 @@ st.markdown(
         color: #0F172A !important;
         font-size: 16px !important;
     }
-    div[data-testid="stNumberInput"] button {
-        background-color: #E2E8F0 !important;
-        color: #0F172A !important;
-        border: none !important;
-        border-left: 1px solid #CBD5E1 !important;
-    }
-    div[data-testid="stNumberInput"] button:hover {
-        background-color: #CBD5E1 !important;
-    }
-    div[data-testid="stNumberInput"] button svg {
-        fill: #0F172A !important;
-        color: #0F172A !important;
-    }
-
-    /* 2. SMR RATING (Selectbox) */
     div[data-testid="stSelectbox"] > div > div {
         background-color: #FFFFFF !important;
         border: 1.5px solid #0F172A !important;
         border-radius: 10px !important;
         overflow: hidden !important;
     }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-        background-color: #FFFFFF !important;
-        border-radius: 8px !important;
-    }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-        border: none !important;
-    }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div > div:last-child {
-        background-color: #E2E8F0 !important;
-        border-left: 1px solid #CBD5E1 !important;
-        padding-left: 10px !important;
-        padding-right: 10px !important;
-    }
-    div[data-testid="stSelectbox"] svg {
-        fill: #0F172A !important;
-        color: #0F172A !important;
-    }
-
-    /* Išskleidžiamo meniu (Dropdown) stiliai */
-    div[data-baseweb="popover"] ul {
-        background-color: #FFFFFF !important;
-        border: 1.5px solid #0F172A !important;
-        border-radius: 8px !important;
-    }
-    div[data-baseweb="popover"] li {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-    }
-    div[data-baseweb="popover"] li:hover,
-    div[data-baseweb="popover"] li[aria-selected="true"] {
-        background-color: #E2E8F0 !important;
-        color: #0F172A !important;
-    }
-
-    /* LENTELIŲ STILIAI */
-    div[data-testid="stDataFrame"], .stDataFrame {
-        background-color: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
-        border-radius: 8px !important;
-        padding: 4px !important;
-    }
-    div[data-testid="stDataFrame"] iframe {
-        background-color: #FFFFFF !important;
-    }
-    .stTable table {
-        background-color: #FFFFFF !important;
+    /* Stilius Excel parsisiuntimo mygtukui pagal nuotrauką */
+    div.stDownloadButton > button {
+        background-color: #F1F5F9 !important;
         color: #0F172A !important;
         border: 1px solid #E2E8F0 !important;
-        border-collapse: collapse !important;
-    }
-    .stTable th {
-        background-color: #F8FAFC !important;
-        color: #0F172A !important;
+        border-radius: 12px !important;
         font-weight: 600 !important;
-        border: 1px solid #E2E8F0 !important;
+        width: 100% !important;
+        padding: 0.5rem 1rem !important;
     }
-    .stTable td {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-        border: 1px solid #E2E8F0 !important;
+    div.stDownloadButton > button:hover {
+        background-color: #E2E8F0 !important;
+        border-color: #CBD5E1 !important;
     }
 </style>
 """,
@@ -168,7 +94,7 @@ st.markdown(
 st.title("📊 Akcijų Analizės Agentas")
 
 # ------------------------------------------------------------------------------
-# 2. ŠONINĖ JUOSTA (PARAMETRAI)
+# 2. ŠONINĖ JUOSTA (PARAMETRAI IR MYGTUKAS)
 # ------------------------------------------------------------------------------
 st.sidebar.header("⚙️ Parametrai")
 ticker_input = (
@@ -182,6 +108,9 @@ eps_rating_input = st.sidebar.number_input(
 smr_rating_input = st.sidebar.selectbox(
     "SMR Rating (A-E balai):", ["-", "A", "B", "C", "D", "E"]
 )
+
+# Vietos žymeklis mygtukui šoninėje juostoje (bus sugeneruotas vėliau, kai paruošim duomenis)
+sidebar_download_placeholder = st.sidebar.empty()
 
 
 # Pagalbinės funkcijos
@@ -335,30 +264,68 @@ if ticker_input:
       cur = info.get("currency", "USD")
       long_name = info.get("longName", ticker_input)
 
-      # FINANCIALS (CAGR)
       eps_growth_3y = None
       sales_growth_3y = None
+      eps_base_val, eps_latest_val = None, None
+      rev_base_val, rev_latest_val = None, None
+      eps_base_note, eps_latest_note = "", ""
+      rev_base_note, rev_latest_note = "", ""
+
+      financials_years = []
+      revenues_vals = []
+      net_income_vals = []
 
       try:
         inc = t.income_stmt
         if inc is not None and not inc.empty:
           valid_cols = sorted([c for c in inc.columns if pd.notna(c)])
+
+          rev_row_candidates = ["Total Revenue", "Operating Revenue"]
+          ni_row_candidates = ["Net Income", "Net Income Common Stockholders"]
+
+          r_series, ni_series = None, None
+          for rc in rev_row_candidates:
+            if rc in inc.index:
+              r_series = inc.loc[rc]
+              break
+          for nic in ni_row_candidates:
+            if nic in inc.index:
+              ni_series = inc.loc[nic]
+              break
+
+          recent_cols = valid_cols[-4:] if len(valid_cols) >= 4 else valid_cols
+          for col in recent_cols:
+            yr_str = pd.to_datetime(col).strftime("%Y")
+            financials_years.append(yr_str)
+            r_val = r_series.loc[col] if r_series is not None and col in r_series.index else 0
+            ni_val = ni_series.loc[col] if ni_series is not None and col in ni_series.index else 0
+            revenues_vals.append(float(r_val) if pd.notna(r_val) else 0.0)
+            net_income_vals.append(float(ni_val) if pd.notna(ni_val) else 0.0)
+
           if len(valid_cols) >= 4:
             col_latest = valid_cols[-1]
             col_base = valid_cols[-4]
+            dt_latest = pd.to_datetime(col_latest).strftime("%Y-%m-%d")
+            dt_base = pd.to_datetime(col_base).strftime("%Y-%m-%d")
 
             for cand in ["Diluted EPS", "Basic EPS"]:
               if cand in inc.index:
-                b_val = inc.loc[cand, col_base]
-                l_val = inc.loc[cand, col_latest]
-                eps_growth_3y = calc_cagr(b_val, l_val, 3)
+                eps_base_val = inc.loc[cand, col_base]
+                eps_latest_val = inc.loc[cand, col_latest]
+                eps_growth_3y = calc_cagr(eps_base_val, eps_latest_val, 3)
+                eps_base_note = f"Yahoo Finance - Diluted/Basic EPS, FY {dt_base}"
+                eps_latest_note = (
+                    f"Yahoo Finance - Diluted/Basic EPS, FY {dt_latest}"
+                )
                 break
 
             for cand in ["Total Revenue", "Operating Revenue"]:
               if cand in inc.index:
-                b_val = inc.loc[cand, col_base]
-                l_val = inc.loc[cand, col_latest]
-                sales_growth_3y = calc_cagr(b_val, l_val, 3)
+                rev_base_val = inc.loc[cand, col_base]
+                rev_latest_val = inc.loc[cand, col_latest]
+                sales_growth_3y = calc_cagr(rev_base_val, rev_latest_val, 3)
+                rev_base_note = f"Yahoo Finance - Total Revenue, FY {dt_base}"
+                rev_latest_note = f"Yahoo Finance - Total Revenue, FY {dt_latest}"
                 break
       except Exception:
         pass
@@ -394,9 +361,8 @@ if ticker_input:
 
       st.divider()
 
-      # 2 SEKCIJA: KAINOS POKYTIS (NUO 1M IKI 5Y)
-      st.subheader("📉 KAINOS POKYTIS")
-
+      # 2 SEKCIJA: KAINOS POKYTIS
+      st.subheader("KAINOS POKYTIS")
       df_price = pd.DataFrame()
       if not hist_5y.empty and len(hist_5y) > 1:
         hist_5y.index = hist_5y.index.tz_localize(None)
@@ -420,11 +386,11 @@ if ticker_input:
         p_5y = float(hist_5y["Close"].iloc[0])
 
         periods_data = [
-            ("1M", p_1m),
-            ("6M", p_6m),
-            ("YTD", p_ytd),
-            ("1y", p_1y),
             ("5y", p_5y),
+            ("1y", p_1y),
+            ("YTD", p_ytd),
+            ("6M", p_6m),
+            ("1M", p_1m),
         ]
 
         price_change_list = []
@@ -438,13 +404,14 @@ if ticker_input:
           price_change_list.append(
               {
                   "Laikotarpis": label,
-                  "Kaina praeityje (USD)": f"{past_p:.2f}",
+                  "Kaina praeityje (USD)": (
+                      f"{past_p:.2f}" if isinstance(past_p, (int, float)) else "N/A"
+                  ),
                   "Pokytis %": chg_str,
               }
           )
 
         df_price = pd.DataFrame(price_change_list)
-
         st.dataframe(
             df_price.style.apply(style_price_change, axis=None),
             use_container_width=True,
@@ -454,120 +421,155 @@ if ticker_input:
       st.divider()
 
       # 3 SEKCIJA: PAGRINDINIAI RODIKLIAI
-      st.subheader("📌 PAGRINDINIAI RODIKLIAI")
+      st.subheader("PAGRINDINIAI RODIKLIAI")
 
       mgmt_own = info.get("heldPercentInsiders")
-      mgmt_own_str = f"{mgmt_own * 100:.2f}%" if mgmt_own is not None else "N/A"
+      mgmt_own_val = mgmt_own if mgmt_own is not None else "N/A"
 
       div_yield = info.get("dividendYield")
       if div_yield is not None:
         div_yield_val = div_yield * 100 if div_yield < 1 else div_yield
-        div_yield_str = f"{div_yield_val:.2f}%"
       else:
-        div_yield_str = "N/A"
+        div_yield_val = "N/A"
 
       d_e = info.get("debtToEquity")
-      d_e_str = f"{d_e:.2f}%" if d_e is not None else "N/A"
+
+      def fmt_val(v, decimals=2, is_pct=False):
+        if v is None or pd.isna(v):
+          return "N/A"
+        try:
+          val = float(v)
+          if is_pct:
+            return f"{val:.2f}%"
+          return f"{val:.{decimals}f}"
+        except (ValueError, TypeError):
+          return str(v)
+
+      def fmt_large(v):
+        if v is None or pd.isna(v):
+          return "N/A"
+        try:
+          return f"{float(v):,.0f}"
+        except (ValueError, TypeError):
+          return str(v)
 
       main_metrics_data = [
           {
               "Rodiklis": "PRICE",
-              "Reikšmė": f"{price:.2f} {cur}" if price else "N/A",
+              "Reikšmė": fmt_val(price),
               "Šaltinis / pastaba": "Yahoo Finance - currentPrice",
           },
           {
               "Rodiklis": "Forward P/E",
-              "Reikšmė": (
-                  f"{info.get('forwardPE'):.2f}"
-                  if info.get("forwardPE")
-                  else "N/A"
-              ),
+              "Reikšmė": fmt_val(info.get("forwardPE")),
               "Šaltinis / pastaba": "Yahoo Finance - forwardPE",
           },
           {
               "Rodiklis": "EPS rating",
-              "Reikšmė": (
-                  str(eps_rating_input) if eps_rating_input > 0 else "N/A"
+              "Reikšmė": eps_rating_input if eps_rating_input > 0 else "N/A",
+              "Šaltinis / pastaba": (
+                  "IBD (Investors.com) - reikia rankinio įvedimo, 1-99 balas"
               ),
-              "Šaltinis / pastaba": "IBD (Investors.com) - rankinis įvedimas",
+          },
+          {
+              "Rodiklis": "EPS (prieš 3 FY)",
+              "Reikšmė": fmt_val(eps_base_val),
+              "Šaltinis / pastaba": eps_base_note,
+          },
+          {
+              "Rodiklis": "EPS (paskutiniai FY)",
+              "Reikšmė": fmt_val(eps_latest_val),
+              "Šaltinis / pastaba": eps_latest_note,
           },
           {
               "Rodiklis": "3 Year EPS Growth Rate",
               "Reikšmė": (
-                  f"{eps_growth_3y:.2f}%"
+                  f"{eps_growth_3y:.2f}"
                   if eps_growth_3y is not None
                   else "N/A"
               ),
               "Šaltinis / pastaba": (
-                  "Apskaičiuota (CAGR) iš Yahoo Finance ataskaitų"
+                  "Apskaičiuota (CAGR) iš Yahoo Finance finansinių ataskaitų"
               ),
           },
           {
               "Rodiklis": "SMR Rating",
               "Reikšmė": smr_rating_input if smr_rating_input != "-" else "N/A",
-              "Šaltinis / pastaba": "IBD (Investors.com) - rankinis įvedimas",
+              "Šaltinis / pastaba": (
+                  "IBD (Investors.com) - reikia rankinio įvedimo, A-E balas"
+              ),
+          },
+          {
+              "Rodiklis": "Pajamos (prieš 3 FY)",
+              "Reikšmė": fmt_large(rev_base_val),
+              "Šaltinis / pastaba": rev_base_note,
+          },
+          {
+              "Rodiklis": "Pajamos (paskutiniai FY)",
+              "Reikšmė": fmt_large(rev_latest_val),
+              "Šaltinis / pastaba": rev_latest_note,
           },
           {
               "Rodiklis": "3-Year Sales Growth Rate",
               "Reikšmė": (
-                  f"{sales_growth_3y:.2f}%"
+                  f"{sales_growth_3y:.2f}"
                   if sales_growth_3y is not None
                   else "N/A"
               ),
               "Šaltinis / pastaba": (
-                  "Apskaičiuota (CAGR) iš Yahoo Finance ataskaitų"
+                  "Apskaičiuota (CAGR) iš Yahoo Finance finansinių ataskaitų"
               ),
           },
           {
               "Rodiklis": "Cash",
-              "Reikšmė": format_number(info.get("totalCash"), currency=cur),
+              "Reikšmė": fmt_large(info.get("totalCash")),
               "Šaltinis / pastaba": "Yahoo Finance - totalCash",
           },
           {
               "Rodiklis": "Debt",
-              "Reikšmė": format_number(info.get("totalDebt"), currency=cur),
+              "Reikšmė": fmt_large(info.get("totalDebt")),
               "Šaltinis / pastaba": "Yahoo Finance - totalDebt",
           },
           {
               "Rodiklis": "Total Debt/Equity",
-              "Reikšmė": d_e_str,
+              "Reikšmė": fmt_val(d_e),
               "Šaltinis / pastaba": "Yahoo Finance - debtToEquity (mrq)",
           },
           {
               "Rodiklis": "Book Value Per Share",
-              "Reikšmė": (
-                  f"{info.get('bookValue'):.2f} {cur}"
-                  if info.get("bookValue")
-                  else "N/A"
-              ),
+              "Reikšmė": fmt_val(info.get("bookValue")),
               "Šaltinis / pastaba": "Yahoo Finance - bookValue (mrq)",
           },
           {
               "Rodiklis": "ROE",
               "Reikšmė": (
-                  f"{info.get('returnOnEquity') * 100:.2f}%"
+                  f"{info.get('returnOnEquity') * 100:.2f}"
                   if info.get("returnOnEquity")
                   else "N/A"
               ),
-              "Šaltinis / pastaba": "Yahoo Finance - returnOnEquity",
+              "Šaltinis / pastaba": "Yahoo Finance - returnOnEquity (%)",
           },
           {
               "Rodiklis": "MGMT owns",
-              "Reikšmė": mgmt_own_str,
-              "Šaltinis / pastaba": "Yahoo Finance - heldPercentInsiders",
+              "Reikšmė": (
+                  f"{mgmt_own_val * 100:.2f}"
+                  if isinstance(mgmt_own_val, (int, float))
+                  else str(mgmt_own_val)
+              ),
+              "Šaltinis / pastaba": "Yahoo Finance - heldPercentInsiders (%)",
           },
           {
               "Rodiklis": "Dividend Yield",
-              "Reikšmė": div_yield_str,
-              "Šaltinis / pastaba": "Yahoo Finance - dividendYield",
+              "Reikšmė": (
+                  f"{div_yield_val:.2f}"
+                  if isinstance(div_yield_val, (int, float))
+                  else str(div_yield_val)
+              ),
+              "Šaltinis / pastaba": "Yahoo Finance - dividendYield (%)",
           },
           {
               "Rodiklis": "1y Target Est",
-              "Reikšmė": (
-                  f"{info.get('targetMeanPrice'):.2f} {cur}"
-                  if info.get("targetMeanPrice")
-                  else "N/A"
-              ),
+              "Reikšmė": fmt_val(info.get("targetMeanPrice")),
               "Šaltinis / pastaba": "Yahoo Finance - targetMeanPrice",
           },
       ]
@@ -584,86 +586,46 @@ if ticker_input:
 
       st.divider()
 
-      # 4 SEKCIJA: REVENUES, NET INCOME
+      # 4 SEKCIJA: REVENUES, NET INCOME (GRAFIKAS SU DATA LABELS) - PERKELTAS ČIA
       st.subheader("📊 REVENUES, NET INCOME")
-      try:
-        inc = t.income_stmt
-        if inc is not None and not inc.empty:
-          rev_s = None
-          for cand in ["Total Revenue", "Operating Revenue", "Revenue"]:
-            if cand in inc.index:
-              rev_s = inc.loc[cand]
-              break
-          ni_s = None
-          for cand in [
-              "Net Income",
-              "Net Income Common Stockholders",
-              "Net Income Including Noncontrolling Interests",
-          ]:
-            if cand in inc.index:
-              ni_s = inc.loc[cand]
-              break
+      if financials_years and revenues_vals and net_income_vals:
+        rev_b_formatted = [f"{v / 1e9:.1f}B" for v in revenues_vals]
+        ni_b_formatted = [f"{v / 1e9:.1f}B" for v in net_income_vals]
 
-          if rev_s is not None and ni_s is not None:
-            cols_sorted = sorted([c for c in inc.columns if pd.notna(c)])[-5:]
-            years = [pd.to_datetime(c).strftime("%Y") for c in cols_sorted]
-            rev_vals = [rev_s[c] / 1e9 for c in cols_sorted]
-            ni_vals = [ni_s[c] / 1e9 for c in cols_sorted]
-
-            fig_fin = go.Figure()
-            fig_fin.add_trace(
-                go.Bar(
-                    x=years,
-                    y=rev_vals,
-                    name=f"Revenues ({cur} mlrd.)",
-                    marker_color="#38bdf8",
-                    text=[f"{v:.1f}B" for v in rev_vals],
-                    textposition="auto",
-                )
+        fig_rev_ni = go.Figure()
+        fig_rev_ni.add_trace(
+            go.Bar(
+                x=financials_years,
+                y=[v / 1e9 for v in revenues_vals],
+                name="Revenues (USD mlrd.)",
+                marker_color="#38bdf8",
+                text=rev_b_formatted,
+                textposition="auto",
             )
-            fig_fin.add_trace(
-                go.Bar(
-                    x=years,
-                    y=ni_vals,
-                    name=f"Net Income ({cur} mlrd.)",
-                    marker_color="#10b981",
-                    text=[f"{v:.1f}B" for v in ni_vals],
-                    textposition="auto",
-                )
+        )
+        fig_rev_ni.add_trace(
+            go.Bar(
+                x=financials_years,
+                y=[v / 1e9 for v in net_income_vals],
+                name="Net Income (USD mlrd.)",
+                marker_color="#34d399",
+                text=ni_b_formatted,
+                textposition="auto",
             )
-            fig_fin.update_layout(
-                barmode="group",
-                paper_bgcolor="#0F172A",
-                plot_bgcolor="#0F172A",
-                font=dict(color="#FFFFFF"),
-                margin=dict(l=20, r=20, t=30, b=20),
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1,
-                    font=dict(color="#FFFFFF"),
-                ),
-            )
-            fig_fin.update_xaxes(
-                showgrid=True, gridcolor="#334155", color="#FFFFFF", title="Metai"
-            )
-            fig_fin.update_yaxes(
-                showgrid=True,
-                gridcolor="#334155",
-                color="#FFFFFF",
-                title=f"Suma ({cur} mlrd.)",
-            )
-            st.plotly_chart(fig_fin, use_container_width=True)
-          else:
-            st.info(
-                "Nepavyko aptikti pajamų arba grynojo pelno eilutes ataskaitose."
-            )
-        else:
-          st.info("Finansinių ataskaitų duomenų nerasta.")
-      except Exception as e:
-        st.info(f"Nepavyko sugeneruoti Revenues ir Net Income grafiko: {e}")
+        )
+        fig_rev_ni.update_layout(
+            barmode="group",
+            paper_bgcolor="#0F172A",
+            plot_bgcolor="#0F172A",
+            font=dict(color="#FFFFFF"),
+            margin=dict(l=20, r=20, t=30, b=20),
+            xaxis=dict(title="Metai", showgrid=True, gridcolor="#334155", color="#FFFFFF"),
+            yaxis=dict(title="Suma (USD mlrd.)", showgrid=True, gridcolor="#334155", color="#FFFFFF"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_rev_ni, use_container_width=True)
+      else:
+        st.info("Finansinių ataskaitų duomenų pajamų ir pelno grafikui nerasta.")
 
       st.divider()
 
@@ -721,7 +683,7 @@ if ticker_input:
                             if pd.notna(r.get("Shares"))
                             else "N/A"
                         ),
-                        "Suma": format_number(val, currency=cur),
+                        "Suma": f"{val:,.2f}" if pd.notna(val) else "0.00",
                     }
                 )
 
@@ -733,10 +695,7 @@ if ticker_input:
       col_i1, col_i2, col_i3 = st.columns(3)
       col_i1.metric("Iš viso pirkta", format_number(total_buy, currency=cur))
       col_i2.metric("Iš viso parduota", format_number(total_sell, currency=cur))
-      col_i3.metric(
-          "Grynasis srautas (pirkta-parduota)",
-          format_number(net_flow, currency=cur),
-      )
+      col_i3.metric("Grynasis srautas", format_number(net_flow, currency=cur))
 
       if insider_df is not None and not insider_df.empty:
         st.dataframe(
@@ -749,12 +708,11 @@ if ticker_input:
 
       st.divider()
 
-      # 6 SEKCIJA: GRAFIKAS (MĖNESINĖ INSIDER APYVARTA VS. KAINA)
+      # 6 SEKCIJA: MĖNESINĖ INSIDER APYVARTA VS KAINA
       st.subheader("📈 MĖNESINĖ INSIDER APYVARTA VS. KAINA")
-
+      df_chart = pd.DataFrame()
       if not hist_5y.empty:
         end_dt = hist_5y.index[-1]
-
         try:
           m_ends = pd.date_range(end=end_dt, periods=13, freq="ME")
         except ValueError:
@@ -767,28 +725,30 @@ if ticker_input:
           m_str = me.strftime("%Y-%m")
           v_at = monthly_insider_vol.get(m_str, 0.0)
           chart_data.append(
-              {"Mėnuo": m_str, "Kaina": p_at, "Insider Apyvarta": v_at}
+              {
+                  "Mėnuo": m_str,
+                  "Kaina (USD)": round(p_at, 2),
+                  "Insider apyvarta (USD)": round(v_at, 2),
+              }
           )
 
         df_chart = pd.DataFrame(chart_data)
 
         fig = make_subplots(specs=[[{"secondary_y": True}]])
-
         fig.add_trace(
             go.Bar(
                 x=df_chart["Mėnuo"],
-                y=df_chart["Insider Apyvarta"],
+                y=df_chart["Insider apyvarta (USD)"],
                 name=f"Insider Apyvarta ({cur})",
                 marker_color="#38bdf8",
                 opacity=0.85,
             ),
             secondary_y=False,
         )
-
         fig.add_trace(
             go.Scatter(
                 x=df_chart["Mėnuo"],
-                y=df_chart["Kaina"],
+                y=df_chart["Kaina (USD)"],
                 name=f"Akcijos Kaina ({cur})",
                 mode="lines+markers",
                 line=dict(color="#10b981", width=3),
@@ -796,46 +756,17 @@ if ticker_input:
             ),
             secondary_y=True,
         )
-
         fig.update_layout(
             paper_bgcolor="#0F172A",
             plot_bgcolor="#0F172A",
             font=dict(color="#FFFFFF"),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                font=dict(color="#FFFFFF"),
-            ),
             margin=dict(l=20, r=20, t=30, b=20),
         )
-
-        fig.update_xaxes(
-            title_text="Mėnuo", showgrid=True, gridcolor="#334155", color="#FFFFFF"
-        )
-        fig.update_yaxes(
-            title_text=f"Insider Apyvarta ({cur})",
-            secondary_y=False,
-            showgrid=True,
-            gridcolor="#334155",
-            color="#FFFFFF",
-        )
-        fig.update_yaxes(
-            title_text=f"Akcijos Kaina ({cur})",
-            secondary_y=True,
-            showgrid=False,
-            color="#FFFFFF",
-        )
-
         st.plotly_chart(fig, use_container_width=True)
-      else:
-        st.info("Nepavyko sugeneruoti grafiko, nes nėra istorinių duomenų.")
 
       st.divider()
 
-      # 7 SEKCIJA: ANALITIKŲ REKOMENDACIJA (PERKELTA Į PATĮ GALĄ)
+      # 7 SEKCIJA: ANALITIKŲ REKOMENDACIJA (PAČIOJE APAČIOJE)
       st.subheader("🎯 ANALITIKŲ REKOMENDACIJA")
 
       rec_key = info.get("recommendationKey", "").lower()
@@ -852,19 +783,269 @@ if ticker_input:
       col_rec1, col_rec2, col_rec3 = st.columns(3)
       col_rec1.metric("Rekomendacija", rec_lt)
       col_rec2.metric(
-          "Vidutinis balas (1=Strong Buy, 5=Sell)",
-          (
-              f"{info.get('recommendationMean'):.2f}"
-              if info.get("recommendationMean")
-              else "N/A"
-          ),
+          "Vidutinis balas",
+          f"{info.get('recommendationMean'):.2f}"
+          if info.get("recommendationMean")
+          else "N/A",
       )
       col_rec3.metric(
           "Analitikų skaičius",
-          (
-              str(info.get("numberOfAnalystOpinions"))
+          str(info.get("numberOfAnalystOpinions"))
+          if info.get("numberOfAnalystOpinions")
+          else "N/A",
+      )
+
+      # ------------------------------------------------------------------------------
+      # 8. EXCEL EKSPORTAS NAUDOJANT OPENPYXL
+      # ------------------------------------------------------------------------------
+      output = BytesIO()
+      wb = openpyxl.Workbook()
+      ws = wb.active
+      sheet_name_clean = ticker_input[:31]
+      ws.title = sheet_name_clean
+
+      ws.views.sheetView[0].showGridLines = True
+
+      font_family = "Arial"
+      title_font = Font(name=font_family, size=14, bold=True, color="1E3A8A")
+      subtitle_font = Font(name=font_family, size=9, italic=True, color="475569")
+      section_font = Font(name=font_family, size=11, bold=True, color="FFFFFF")
+      header_font = Font(name=font_family, size=10, bold=True, color="FFFFFF")
+      regular_font = Font(name=font_family, size=10, color="0F172A")
+      bold_font = Font(name=font_family, size=10, bold=True, color="0F172A")
+
+      section_fill = PatternFill(
+          start_color="1E3A8A", end_color="1E3A8A", fill_type="solid"
+      )
+      header_fill = PatternFill(
+          start_color="334155", end_color="334155", fill_type="solid"
+      )
+      zebra_fill = PatternFill(
+          start_color="F8FAFC", end_color="F8FAFC", fill_type="solid"
+      )
+
+      thin_border_side = Side(border_style="thin", color="CBD5E1")
+      border_all = Border(
+          left=thin_border_side,
+          right=thin_border_side,
+          top=thin_border_side,
+          bottom=thin_border_side,
+      )
+
+      current_row = 1
+
+      ws.cell(
+          row=current_row, column=1, value=f"{long_name} ({ticker_input})"
+      ).font = title_font
+      current_row += 1
+      current_time_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+      ws.cell(
+          row=current_row,
+          column=1,
+          value=(
+              f"Duomenys gauti: {current_time_str} | Šaltinis: Yahoo Finance |"
+              f" Valiuta: {cur}"
+          ),
+      ).font = subtitle_font
+      current_row += 2
+
+      def write_section_header(title_text):
+        global current_row
+        ws.merge_cells(
+            start_row=current_row,
+            start_column=1,
+            end_row=current_row,
+            end_column=3,
+        )
+        cell = ws.cell(row=current_row, column=1, value=title_text)
+        cell.font = section_font
+        cell.fill = section_fill
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        current_row += 1
+
+      def write_table_headers(headers):
+        global current_row
+        for col_idx, h in enumerate(headers, 1):
+          cell = ws.cell(row=current_row, column=col_idx, value=h)
+          cell.font = header_font
+          cell.fill = header_fill
+          cell.alignment = Alignment(
+              horizontal="center" if col_idx > 1 else "left", vertical="center"
+          )
+          cell.border = border_all
+        current_row += 1
+
+      # 1. PAGRINDINIAI RODIKLIAI
+      write_section_header("PAGRINDINIAI RODIKLIAI")
+      write_table_headers(["Rodiklis", "Reikšmė", "Šaltinis / pastaba"])
+
+      for idx, r in df_main.iterrows():
+        c1 = ws.cell(row=current_row, column=1, value=r["Rodiklis"])
+        c2 = ws.cell(row=current_row, column=2, value=r["Reikšmė"])
+        c3 = ws.cell(row=current_row, column=3, value=r["Šaltinis / pastaba"])
+
+        for c in [c1, c2, c3]:
+          c.font = regular_font
+          c.border = border_all
+          if idx % 2 == 1:
+            c.fill = zebra_fill
+        c2.alignment = Alignment(horizontal="right")
+        current_row += 1
+      current_row += 1
+
+      # 2. KAINOS POKYTIS
+      write_section_header("KAINOS POKYTIS")
+      write_table_headers(["Laikotarpis", "Kaina praeityje (USD)", "Pokytis %"])
+
+      if "df_price" in locals() and not df_price.empty:
+        for idx, r in df_price.iterrows():
+          c1 = ws.cell(row=current_row, column=1, value=r["Laikotarpis"])
+          c2 = ws.cell(
+              row=current_row, column=2, value=r["Kaina praeityje (USD)"]
+          )
+          c3 = ws.cell(row=current_row, column=3, value=r["Pokytis %"])
+
+          for c in [c1, c2, c3]:
+            c.font = regular_font
+            c.border = border_all
+            if idx % 2 == 1:
+              c.fill = zebra_fill
+          c2.alignment = Alignment(horizontal="right")
+          c3.alignment = Alignment(horizontal="right")
+          current_row += 1
+      current_row += 1
+
+      # 3. ANALITIKŲ REKOMENDACIJA
+      write_section_header("ANALITIKŲ REKOMENDACIJA")
+      write_table_headers(["Rodiklis / Aprašymas", "Reikšmė", "Pastaba"])
+
+      rec_rows = [
+          [
+              "Rekomendacija (Buy/Hold/Sell)",
+              rec_lt,
+              "Yahoo Finance - recommendationKey",
+          ],
+          [
+              "Vidutinis balas (1=Strong Buy, 5=Strong Sell)",
+              (
+                  f"{info.get('recommendationMean'):.2f}"
+                  if info.get("recommendationMean")
+                  else "N/A"
+              ),
+              "Yahoo Finance - recommendationMean",
+          ],
+          [
+              "Analitikų skaičius",
+              info.get("numberOfAnalystOpinions")
               if info.get("numberOfAnalystOpinions")
-              else "N/A"
+              else "N/A",
+              "Yahoo Finance - numberOfAnalystOpinions",
+          ],
+      ]
+      for idx, row_data in enumerate(rec_rows):
+        for col_idx, val in enumerate(row_data, 1):
+          cell = ws.cell(row=current_row, column=col_idx, value=val)
+          cell.font = regular_font
+          cell.border = border_all
+          if idx % 2 == 1:
+            cell.fill = zebra_fill
+          if col_idx == 2:
+            cell.alignment = Alignment(horizontal="right")
+        current_row += 1
+      current_row += 1
+
+      # 4. INSIDER PREKYBA
+      write_section_header("INSIDER PREKYBA (paskutiniai 12 mėn.)")
+      insider_headers = ["Data", "Asmuo", "Pareigos", "Sandoris", "Akcijos", "Suma"]
+      for col_idx, h in enumerate(insider_headers, 1):
+        cell = ws.cell(row=current_row, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border_all
+      current_row += 1
+
+      if insider_df is not None and not insider_df.empty:
+        for idx, r in insider_df.iterrows():
+          c1 = ws.cell(row=current_row, column=1, value=r["Data"])
+          c2 = ws.cell(row=current_row, column=2, value=r["Asmuo"])
+          c3 = ws.cell(row=current_row, column=3, value=r["Pareigos"])
+          c4 = ws.cell(row=current_row, column=4, value=r["Sandoris"])
+          c5 = ws.cell(row=current_row, column=5, value=r["Akcijos"])
+          c6 = ws.cell(row=current_row, column=6, value=r["Suma"])
+
+          for c in [c1, c2, c3, c4, c5, c6]:
+            c.font = regular_font
+            c.border = border_all
+            if idx % 2 == 1:
+              c.fill = zebra_fill
+          c5.alignment = Alignment(horizontal="right")
+          c6.alignment = Alignment(horizontal="right")
+          current_row += 1
+
+      summary_items = [
+          ("Iš viso pirkta", f"{total_buy:,.2f}"),
+          ("Iš viso parduota", f"{total_sell:,.2f}"),
+          ("Grynasis srautas (pirkta - parduota)", f"{net_flow:,.2f}"),
+      ]
+      for label, val in summary_items:
+        ws.cell(row=current_row, column=1, value=label).font = bold_font
+        ws.cell(row=current_row, column=1).border = border_all
+        c_val = ws.cell(row=current_row, column=2, value=val)
+        c_val.font = bold_font
+        c_val.border = border_all
+        c_val.alignment = Alignment(horizontal="right")
+        current_row += 1
+      current_row += 1
+
+      # 5. GRAFIKO DUOMENYS
+      write_section_header("MĖNESINĖ INSIDER APYVARTA VS. KAINA")
+      write_table_headers(["Mėnuo", "Kaina (USD)", "Insider apyvarta (USD)"])
+
+      if "df_chart" in locals() and not df_chart.empty:
+        for idx, r in df_chart.iterrows():
+          c1 = ws.cell(row=current_row, column=1, value=r["Mėnuo"])
+          c2 = ws.cell(
+              row=current_row, column=2, value=f"{r['Kaina (USD)']:,.2f}"
+          )
+          c3 = ws.cell(
+              row=current_row,
+              column=3,
+              value=f"{r['Insider apyvarta (USD)']:,.2f}",
+          )
+
+          for c in [c1, c2, c3]:
+            c.font = regular_font
+            c.border = border_all
+            if idx % 2 == 1:
+              c.fill = zebra_fill
+          c2.alignment = Alignment(horizontal="right")
+          c3.alignment = Alignment(horizontal="right")
+          current_row += 1
+
+      for col in ws.columns:
+        max_length = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+          try:
+            if cell.value:
+              val_str = str(cell.value)
+              if len(val_str) > max_length:
+                max_length = len(val_str)
+          except:
+            pass
+        adjusted_width = max(max_length + 4, 12)
+        ws.column_dimensions[col_letter].width = adjusted_width
+
+      wb.save(output)
+      processed_data = output.getvalue()
+
+      # Mygtukas įdėtas šoninėje juostoje po SMR Rating su norimu pavadinimu "Parsisiųsti XLS"
+      sidebar_download_placeholder.download_button(
+          label="⬇️ Parsisiųsti XLS",
+          data=processed_data,
+          file_name=f"{ticker_input}_analize.xlsx",
+          mime=(
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           ),
       )
 
