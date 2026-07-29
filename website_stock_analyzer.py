@@ -72,7 +72,6 @@ st.markdown(
         border-radius: 10px !important;
         overflow: hidden !important;
     }
-    /* Stilius Excel parsisiuntimo mygtukui pagal nuotrauką */
     div.stDownloadButton > button {
         background-color: #F1F5F9 !important;
         color: #0F172A !important;
@@ -109,7 +108,6 @@ smr_rating_input = st.sidebar.selectbox(
     "SMR Rating (A-E balai):", ["-", "A", "B", "C", "D", "E"]
 )
 
-# Vietos žymeklis mygtukui šoninėje juostoje (bus sugeneruotas vėliau, kai paruošim duomenis)
 sidebar_download_placeholder = st.sidebar.empty()
 
 
@@ -297,8 +295,16 @@ if ticker_input:
           for col in recent_cols:
             yr_str = pd.to_datetime(col).strftime("%Y")
             financials_years.append(yr_str)
-            r_val = r_series.loc[col] if r_series is not None and col in r_series.index else 0
-            ni_val = ni_series.loc[col] if ni_series is not None and col in ni_series.index else 0
+            r_val = (
+                r_series.loc[col]
+                if r_series is not None and col in r_series.index
+                else 0
+            )
+            ni_val = (
+                ni_series.loc[col]
+                if ni_series is not None and col in ni_series.index
+                else 0
+            )
             revenues_vals.append(float(r_val) if pd.notna(r_val) else 0.0)
             net_income_vals.append(float(ni_val) if pd.notna(ni_val) else 0.0)
 
@@ -325,7 +331,9 @@ if ticker_input:
                 rev_latest_val = inc.loc[cand, col_latest]
                 sales_growth_3y = calc_cagr(rev_base_val, rev_latest_val, 3)
                 rev_base_note = f"Yahoo Finance - Total Revenue, FY {dt_base}"
-                rev_latest_note = f"Yahoo Finance - Total Revenue, FY {dt_latest}"
+                rev_latest_note = (
+                    f"Yahoo Finance - Total Revenue, FY {dt_latest}"
+                )
                 break
       except Exception:
         pass
@@ -405,7 +413,9 @@ if ticker_input:
               {
                   "Laikotarpis": label,
                   "Kaina praeityje (USD)": (
-                      f"{past_p:.2f}" if isinstance(past_p, (int, float)) else "N/A"
+                      f"{past_p:.2f}"
+                      if isinstance(past_p, (int, float))
+                      else "N/A"
                   ),
                   "Pokytis %": chg_str,
               }
@@ -427,10 +437,16 @@ if ticker_input:
       mgmt_own_val = mgmt_own if mgmt_own is not None else "N/A"
 
       div_yield = info.get("dividendYield")
-      if div_yield is not None:
-        div_yield_val = div_yield * 100 if div_yield < 1 else div_yield
+      if div_yield is not None and not pd.isna(div_yield):
+          div_yield_float = float(div_yield)
+          # Saugus patikrinimas: jei reikšmė mažesnė už 0.1, ji pateikta kaip dešimtainė trupmeną (pvz. 0.0026 -> 0.26%),
+          # jei didesnė – ji jau yra procentais (pvz. 0.26 -> 0.26%).
+          if div_yield_float < 0.1:
+              div_yield_val = div_yield_float * 100
+          else:
+              div_yield_val = div_yield_float
       else:
-        div_yield_val = "N/A"
+          div_yield_val = "N/A"
 
       d_e = info.get("debtToEquity")
 
@@ -472,16 +488,6 @@ if ticker_input:
               ),
           },
           {
-              "Rodiklis": "EPS (prieš 3 FY)",
-              "Reikšmė": fmt_val(eps_base_val),
-              "Šaltinis / pastaba": eps_base_note,
-          },
-          {
-              "Rodiklis": "EPS (paskutiniai FY)",
-              "Reikšmė": fmt_val(eps_latest_val),
-              "Šaltinis / pastaba": eps_latest_note,
-          },
-          {
               "Rodiklis": "3 Year EPS Growth Rate",
               "Reikšmė": (
                   f"{eps_growth_3y:.2f}"
@@ -498,16 +504,6 @@ if ticker_input:
               "Šaltinis / pastaba": (
                   "IBD (Investors.com) - reikia rankinio įvedimo, A-E balas"
               ),
-          },
-          {
-              "Rodiklis": "Pajamos (prieš 3 FY)",
-              "Reikšmė": fmt_large(rev_base_val),
-              "Šaltinis / pastaba": rev_base_note,
-          },
-          {
-              "Rodiklis": "Pajamos (paskutiniai FY)",
-              "Reikšmė": fmt_large(rev_latest_val),
-              "Šaltinis / pastaba": rev_latest_note,
           },
           {
               "Rodiklis": "3-Year Sales Growth Rate",
@@ -561,7 +557,7 @@ if ticker_input:
           {
               "Rodiklis": "Dividend Yield",
               "Reikšmė": (
-                  f"{div_yield_val:.2f}"
+                  f"{div_yield_val:.2f}%"
                   if isinstance(div_yield_val, (int, float))
                   else str(div_yield_val)
               ),
@@ -586,7 +582,7 @@ if ticker_input:
 
       st.divider()
 
-      # 4 SEKCIJA: REVENUES, NET INCOME (GRAFIKAS SU DATA LABELS) - PERKELTAS ČIA
+      # 4 SEKCIJA: REVENUES, NET INCOME (GRAFIKAS SU DATA LABELS)
       st.subheader("📊 REVENUES, NET INCOME")
       if financials_years and revenues_vals and net_income_vals:
         rev_b_formatted = [f"{v / 1e9:.1f}B" for v in revenues_vals]
@@ -619,9 +615,18 @@ if ticker_input:
             plot_bgcolor="#0F172A",
             font=dict(color="#FFFFFF"),
             margin=dict(l=20, r=20, t=30, b=20),
-            xaxis=dict(title="Metai", showgrid=True, gridcolor="#334155", color="#FFFFFF"),
-            yaxis=dict(title="Suma (USD mlrd.)", showgrid=True, gridcolor="#334155", color="#FFFFFF"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            xaxis=dict(
+                title="Metai", showgrid=True, gridcolor="#334155", color="#FFFFFF"
+            ),
+            yaxis=dict(
+                title="Suma (USD mlrd.)",
+                showgrid=True,
+                gridcolor="#334155",
+                color="#FFFFFF",
+            ),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
         )
         st.plotly_chart(fig_rev_ni, use_container_width=True)
       else:
@@ -766,17 +771,17 @@ if ticker_input:
 
       st.divider()
 
-      # 7 SEKCIJA: ANALITIKŲ REKOMENDACIJA (PAČIOJE APAČIOJE)
+      # 7 SEKCIJA: ANALITIKŲ REKOMENDACIJA
       st.subheader("🎯 ANALITIKŲ REKOMENDACIJA")
 
       rec_key = info.get("recommendationKey", "").lower()
       rec_map = {
-          "strong_buy": "STIPRIAI PIRKTI",
-          "buy": "PIRKTI",
-          "hold": "LAIKYTI",
-          "underperform": "MAŽIAU PIRKTI",
-          "sell": "PARDUOTI",
-          "strong_sell": "STIPRIAI PARDUOTI",
+          "strong_buy": "STRONG BUY",
+          "buy": "BUY",
+          "hold": "HOLD",
+          "underperform": "UNDERPERFORM",
+          "sell": "SELL",
+          "strong_sell": "STRONG SELL",
       }
       rec_lt = rec_map.get(rec_key, rec_key.upper() if rec_key else "N/A")
 
@@ -849,6 +854,7 @@ if ticker_input:
       ).font = subtitle_font
       current_row += 2
 
+
       def write_section_header(title_text):
         global current_row
         ws.merge_cells(
@@ -863,6 +869,7 @@ if ticker_input:
         cell.alignment = Alignment(horizontal="left", vertical="center")
         current_row += 1
 
+
       def write_table_headers(headers):
         global current_row
         for col_idx, h in enumerate(headers, 1):
@@ -874,6 +881,7 @@ if ticker_input:
           )
           cell.border = border_all
         current_row += 1
+
 
       # 1. PAGRINDINIAI RODIKLIAI
       write_section_header("PAGRINDINIAI RODIKLIAI")
@@ -944,105 +952,29 @@ if ticker_input:
       ]
       for idx, row_data in enumerate(rec_rows):
         for col_idx, val in enumerate(row_data, 1):
-          cell = ws.cell(row=current_row, column=col_idx, value=val)
-          cell.font = regular_font
-          cell.border = border_all
+          c = ws.cell(row=current_row, column=col_idx, value=val)
+          c.font = regular_font
+          c.border = border_all
           if idx % 2 == 1:
-            cell.fill = zebra_fill
+            c.fill = zebra_fill
           if col_idx == 2:
-            cell.alignment = Alignment(horizontal="right")
+            c.alignment = Alignment(horizontal="right")
         current_row += 1
-      current_row += 1
-
-      # 4. INSIDER PREKYBA
-      write_section_header("INSIDER PREKYBA (paskutiniai 12 mėn.)")
-      insider_headers = ["Data", "Asmuo", "Pareigos", "Sandoris", "Akcijos", "Suma"]
-      for col_idx, h in enumerate(insider_headers, 1):
-        cell = ws.cell(row=current_row, column=col_idx, value=h)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.border = border_all
-      current_row += 1
-
-      if insider_df is not None and not insider_df.empty:
-        for idx, r in insider_df.iterrows():
-          c1 = ws.cell(row=current_row, column=1, value=r["Data"])
-          c2 = ws.cell(row=current_row, column=2, value=r["Asmuo"])
-          c3 = ws.cell(row=current_row, column=3, value=r["Pareigos"])
-          c4 = ws.cell(row=current_row, column=4, value=r["Sandoris"])
-          c5 = ws.cell(row=current_row, column=5, value=r["Akcijos"])
-          c6 = ws.cell(row=current_row, column=6, value=r["Suma"])
-
-          for c in [c1, c2, c3, c4, c5, c6]:
-            c.font = regular_font
-            c.border = border_all
-            if idx % 2 == 1:
-              c.fill = zebra_fill
-          c5.alignment = Alignment(horizontal="right")
-          c6.alignment = Alignment(horizontal="right")
-          current_row += 1
-
-      summary_items = [
-          ("Iš viso pirkta", f"{total_buy:,.2f}"),
-          ("Iš viso parduota", f"{total_sell:,.2f}"),
-          ("Grynasis srautas (pirkta - parduota)", f"{net_flow:,.2f}"),
-      ]
-      for label, val in summary_items:
-        ws.cell(row=current_row, column=1, value=label).font = bold_font
-        ws.cell(row=current_row, column=1).border = border_all
-        c_val = ws.cell(row=current_row, column=2, value=val)
-        c_val.font = bold_font
-        c_val.border = border_all
-        c_val.alignment = Alignment(horizontal="right")
-        current_row += 1
-      current_row += 1
-
-      # 5. GRAFIKO DUOMENYS
-      write_section_header("MĖNESINĖ INSIDER APYVARTA VS. KAINA")
-      write_table_headers(["Mėnuo", "Kaina (USD)", "Insider apyvarta (USD)"])
-
-      if "df_chart" in locals() and not df_chart.empty:
-        for idx, r in df_chart.iterrows():
-          c1 = ws.cell(row=current_row, column=1, value=r["Mėnuo"])
-          c2 = ws.cell(
-              row=current_row, column=2, value=f"{r['Kaina (USD)']:,.2f}"
-          )
-          c3 = ws.cell(
-              row=current_row,
-              column=3,
-              value=f"{r['Insider apyvarta (USD)']:,.2f}",
-          )
-
-          for c in [c1, c2, c3]:
-            c.font = regular_font
-            c.border = border_all
-            if idx % 2 == 1:
-              c.fill = zebra_fill
-          c2.alignment = Alignment(horizontal="right")
-          c3.alignment = Alignment(horizontal="right")
-          current_row += 1
 
       for col in ws.columns:
-        max_length = 0
+        max_len = 0
         col_letter = get_column_letter(col[0].column)
         for cell in col:
-          try:
-            if cell.value:
-              val_str = str(cell.value)
-              if len(val_str) > max_length:
-                max_length = len(val_str)
-          except:
-            pass
-        adjusted_width = max(max_length + 4, 12)
-        ws.column_dimensions[col_letter].width = adjusted_width
+          if cell.value is not None:
+            max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = max(max_len + 5, 15)
 
       wb.save(output)
-      processed_data = output.getvalue()
+      output.seek(0)
 
-      # Mygtukas įdėtas šoninėje juostoje po SMR Rating su norimu pavadinimu "Parsisiųsti XLS"
       sidebar_download_placeholder.download_button(
-          label="⬇️ Parsisiųsti XLS",
-          data=processed_data,
+          label="📥 Parsisiųsti Excel ataskaitą",
+          data=output,
           file_name=f"{ticker_input}_analize.xlsx",
           mime=(
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1050,4 +982,4 @@ if ticker_input:
       )
 
     except Exception as e:
-      st.error(f"Klaida renkant duomenis: {e}")
+      st.error(f"Klaida apdorojant duomenis: {e}")
