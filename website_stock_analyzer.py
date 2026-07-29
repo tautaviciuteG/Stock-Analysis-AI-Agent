@@ -55,23 +55,66 @@ st.markdown(
         border: 1.5px solid #0F172A !important;
         border-radius: 10px !important;
     }
-    div[data-testid="stNumberInput"] > div > div {
-        background-color: #FFFFFF !important;
-        border: 1.5px solid #0F172A !important;
-        border-radius: 10px !important;
-        overflow: hidden !important;
-    }
-    div[data-testid="stNumberInput"] input {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-        font-size: 16px !important;
-    }
+
+    /* ==========================================================================
+       SUVIENODINTAS STILIUS: NumberInput (+/-) IR Selectbox (Rodyklė)
+       ========================================================================== */
+
+    /* 1. Bendri įvesties laukų rėmeliai */
+    div[data-testid="stNumberInput"] > div > div,
     div[data-testid="stSelectbox"] > div > div {
         background-color: #FFFFFF !important;
         border: 1.5px solid #0F172A !important;
         border-radius: 10px !important;
         overflow: hidden !important;
     }
+
+    /* 2. NumberInput (+ / -) mygtukų dizainas */
+    div[data-testid="stNumberInput"] button {
+        background-color: #E2E8F0 !important;
+        color: #0F172A !important;
+        border: none !important;
+        border-left: 1px solid #E2E8F0 !important;
+        font-weight: bold !important;
+        transition: background-color 0.2s ease !important;
+    }
+    div[data-testid="stNumberInput"] button:hover {
+        background-color: #CBD5E1 !important;
+    }
+
+    /* 3. Selectbox rodyklės bloko dizainas (atitinka +/- mygtukų bloką) */
+    div[data-testid="stSelectbox"] [data-baseweb="select"] > div:last-child {
+        background-color: #E2E8F0 !important;
+        transition: background-color 0.2s ease !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+    div[data-testid="stSelectbox"] [data-baseweb="select"]:hover > div:last-child {
+        background-color: #CBD5E1 !important;
+    }
+
+    /* 4. Visų ikonių (+, -, rodyklė) spalvos ir matomumas */
+    div[data-testid="stNumberInput"] button svg,
+    div[data-testid="stNumberInput"] button:disabled svg,
+    div[data-testid="stSelectbox"] svg {
+        fill: #0F172A !important;
+        color: #0F172A !important;
+        stroke: #0F172A !important;
+    }
+
+    /* Pasyvios (+) / (-) būsenos palaikymas */
+    div[data-testid="stNumberInput"] button:disabled {
+        background-color: #E2E8F0 !important;
+        opacity: 0.7 !important;
+    }
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stSelectbox"] input {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        font-size: 16px !important;
+    }
+
+    /* Atsisiuntimo mygtuko stilius */
     div.stDownloadButton > button {
         background-color: #F1F5F9 !important;
         color: #0F172A !important;
@@ -194,8 +237,8 @@ def style_main_metrics(df, price_val):
             elif metric == "Dividend Yield" and num >= 5.0:
                 is_good = True
             elif (
-                metric in ["3 Year EPS Growth Rate", "3-Year Sales Growth Rate"]
-                and num > 25
+                    metric in ["3 Year EPS Growth Rate", "3-Year Sales Growth Rate"]
+                    and num > 25
             ):
                 is_good = True
             elif metric == "1y Target Est" and price_val is not None and num > price_val:
@@ -377,6 +420,7 @@ if ticker_input:
                 curr_p = price
                 now_dt = hist_5y.index[-1]
 
+
                 def get_historical_price(days_back=None, ytd=False):
                     if ytd:
                         target_dt = pd.Timestamp(year=now_dt.year, month=1, day=1)
@@ -386,6 +430,7 @@ if ticker_input:
                     if not sub.empty:
                         return float(sub["Close"].iloc[-1])
                     return float(hist_5y["Close"].iloc[0])
+
 
                 p_1m = get_historical_price(days_back=30)
                 p_6m = get_historical_price(days_back=182)
@@ -448,6 +493,7 @@ if ticker_input:
 
             d_e = info.get("debtToEquity")
 
+
             def fmt_val(v, decimals=2, is_pct=False):
                 if v is None or pd.isna(v):
                     return "N/A"
@@ -459,6 +505,7 @@ if ticker_input:
                 except (ValueError, TypeError):
                     return str(v)
 
+
             def fmt_large(v):
                 if v is None or pd.isna(v):
                     return "N/A"
@@ -466,6 +513,7 @@ if ticker_input:
                     return f"{float(v):,.0f}"
                 except (ValueError, TypeError):
                     return str(v)
+
 
             main_metrics_data = [
                 {
@@ -672,7 +720,7 @@ if ticker_input:
 
                                 m_key = r[date_col].strftime("%Y-%m")
                                 monthly_insider_vol[m_key] = (
-                                    monthly_insider_vol.get(m_key, 0.0) + val
+                                        monthly_insider_vol.get(m_key, 0.0) + val
                                 )
 
                                 rows.append(
@@ -852,6 +900,7 @@ if ticker_input:
             ).font = subtitle_font
             current_row += 2
 
+
             def write_section_header(title_text, max_cols=6):
                 global current_row
                 ws.merge_cells(
@@ -866,6 +915,7 @@ if ticker_input:
                 cell.alignment = Alignment(horizontal="left", vertical="center")
                 current_row += 1
 
+
             def write_table_headers(headers):
                 global current_row
                 for col_idx, h in enumerate(headers, 1):
@@ -877,6 +927,7 @@ if ticker_input:
                     )
                     cell.border = border_all
                 current_row += 1
+
 
             # 1. PAGRINDINIAI RODIKLIAI
             write_section_header("PAGRINDINIAI RODIKLIAI")
