@@ -24,3 +24,5 @@ A modern and interactive **Streamlit** application designed for fundamental and 
 * **yfinance** (For fetching financial data from Yahoo Finance)
 * **Plotly** (For interactive charts)
 * **Pandas** (For data processing and analysis)
+
+* The code was generated with AI.
