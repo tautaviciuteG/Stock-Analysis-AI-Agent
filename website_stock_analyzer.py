@@ -60,7 +60,6 @@ st.markdown(
        SUVIENODINTAS STILIUS: NumberInput (+/-) IR Selectbox (Rodyklė)
        ========================================================================== */
 
-    /* 1. Bendri įvesties laukų rėmeliai */
     div[data-testid="stNumberInput"] > div > div,
     div[data-testid="stSelectbox"] > div > div {
         background-color: #FFFFFF !important;
@@ -69,7 +68,6 @@ st.markdown(
         overflow: hidden !important;
     }
 
-    /* 2. NumberInput (+ / -) mygtukų dizainas */
     div[data-testid="stNumberInput"] button {
         background-color: #E2E8F0 !important;
         color: #0F172A !important;
@@ -82,7 +80,6 @@ st.markdown(
         background-color: #CBD5E1 !important;
     }
 
-    /* 3. Selectbox rodyklės bloko dizainas (atitinka +/- mygtukų bloką) */
     div[data-testid="stSelectbox"] [data-baseweb="select"] > div:last-child {
         background-color: #E2E8F0 !important;
         transition: background-color 0.2s ease !important;
@@ -93,7 +90,6 @@ st.markdown(
         background-color: #CBD5E1 !important;
     }
 
-    /* 4. Visų ikonių (+, -, rodyklė) spalvos ir matomumas */
     div[data-testid="stNumberInput"] button svg,
     div[data-testid="stNumberInput"] button:disabled svg,
     div[data-testid="stSelectbox"] svg {
@@ -102,7 +98,6 @@ st.markdown(
         stroke: #0F172A !important;
     }
 
-    /* Pasyvios (+) / (-) būsenos palaikymas */
     div[data-testid="stNumberInput"] button:disabled {
         background-color: #E2E8F0 !important;
         opacity: 0.7 !important;
@@ -114,7 +109,6 @@ st.markdown(
         font-size: 16px !important;
     }
 
-    /* Atsisiuntimo mygtuko stilius */
     div.stDownloadButton > button {
         background-color: #F1F5F9 !important;
         color: #0F172A !important;
@@ -139,9 +133,22 @@ st.title("📊 Akcijų Analizės Agentas")
 # 2. ŠONINĖ JUOSTA (PARAMETRAI IR MYGTUKAS)
 # ------------------------------------------------------------------------------
 st.sidebar.header("⚙️ Parametrai")
-ticker_input = (
-    st.sidebar.text_input("Įveskite akcijos tickerį:", "GOOGL").strip().upper()
+
+tickers_raw = st.sidebar.text_input(
+    "Įveskite tickerį (arba kelis, atskirtus kableliu):", "GOOGL"
 )
+st.sidebar.caption(
+    "💡 Pirmasis įrašytas tickeris gauna pilną, išsamią analizę. "
+    "Papildomi tickeriai (pvz. `GOOGL, MSFT, AAPL`) bus parodyti palyginimo lentelėje ir grafike."
+)
+
+PERIOD_OPTIONS = {
+    "1 mėnuo": "1mo",
+    "6 mėnesiai": "6mo",
+    "1 metai": "1y",
+    "5 metai": "5y",
+    "Max": "max",
+}
 
 st.sidebar.subheader("✍️ Rankinis IBD įvedimas")
 eps_rating_input = st.sidebar.number_input(
@@ -153,8 +160,15 @@ smr_rating_input = st.sidebar.selectbox(
 
 sidebar_download_placeholder = st.sidebar.empty()
 
+# Pagrindinio ir palyginamųjų tickerių išskyrimas
+tickers_list = [x.strip().upper() for x in tickers_raw.split(",") if x.strip()]
+ticker_input = tickers_list[0] if tickers_list else ""
+compare_tickers = tickers_list[1:] if len(tickers_list) > 1 else []
 
-# Pagalbinės funkcijos
+
+# ------------------------------------------------------------------------------
+# PAGALBINĖS FUNKCIJOS
+# ------------------------------------------------------------------------------
 def calc_cagr(start_val, end_val, periods=3):
     try:
         if start_val is not None and end_val is not None:
@@ -211,6 +225,89 @@ def parse_value(val_str):
         return float(cleaned)
     except Exception:
         return None
+
+
+def fmt_val(v, decimals=2, is_pct=False):
+    if v is None or pd.isna(v):
+        return "N/A"
+    try:
+        val = float(v)
+        if is_pct:
+            return f"{val:.2f}%"
+        return f"{val:.{decimals}f}"
+    except (ValueError, TypeError):
+        return str(v)
+
+
+def fmt_large(v):
+    if v is None or pd.isna(v):
+        return "N/A"
+    try:
+        return f"{float(v):,.0f}"
+    except (ValueError, TypeError):
+        return str(v)
+
+
+def compute_div_yield_pct(info):
+    """Grąžina dividendų pajamingumą procentais arba None."""
+    dy = info.get("dividendYield")
+    if dy is None or pd.isna(dy):
+        return None
+    dy = float(dy)
+    # Kai kurios yfinance versijos grąžina dalį (0.02), kitos - jau procentą (2.0)
+    return dy * 100 if dy < 0.1 else dy
+
+
+def quarter_label(col):
+    """Formatuoja stulpelio datą kaip 'YYYY Qn'."""
+    ts = pd.to_datetime(col)
+    q = (ts.month - 1) // 3 + 1
+    return f"{ts.year} Q{q}"
+
+
+def extract_financials_series(inc_df, label_func, max_cols=4):
+    """Ištraukia (laikotarpių žymes, pajamas, grynąjį pelną) iš income statement DataFrame."""
+    labels, revenues, net_incomes = [], [], []
+    if inc_df is None or inc_df.empty:
+        return labels, revenues, net_incomes
+
+    valid_cols = sorted([c for c in inc_df.columns if pd.notna(c)])
+    rev_row_candidates = ["Total Revenue", "Operating Revenue"]
+    ni_row_candidates = ["Net Income", "Net Income Common Stockholders"]
+
+    r_series, ni_series = None, None
+    for rc in rev_row_candidates:
+        if rc in inc_df.index:
+            r_series = inc_df.loc[rc]
+            break
+    for nic in ni_row_candidates:
+        if nic in inc_df.index:
+            ni_series = inc_df.loc[nic]
+            break
+
+    recent_cols = valid_cols[-max_cols:] if len(valid_cols) >= max_cols else valid_cols
+    for col in recent_cols:
+        labels.append(label_func(col))
+        r_val = (
+            r_series.loc[col] if r_series is not None and col in r_series.index else 0
+        )
+        ni_val = (
+            ni_series.loc[col] if ni_series is not None and col in ni_series.index else 0
+        )
+        revenues.append(float(r_val) if pd.notna(r_val) else 0.0)
+        net_incomes.append(float(ni_val) if pd.notna(ni_val) else 0.0)
+
+    return labels, revenues, net_incomes
+
+
+REC_MAP = {
+    "strong_buy": "STRONG BUY",
+    "buy": "BUY",
+    "hold": "HOLD",
+    "underperform": "UNDERPERFORM",
+    "sell": "SELL",
+    "strong_sell": "STRONG SELL",
+}
 
 
 def style_main_metrics(df, price_val):
@@ -284,15 +381,60 @@ def style_insider_df(df):
 
 
 # ------------------------------------------------------------------------------
-# 3. DUOMENŲ TRAUKIMAS IR APDOROJIMAS
+# DUOMENŲ TRAUKIMO FUNKCIJOS (CACHED)
+# ------------------------------------------------------------------------------
+@st.cache_data(ttl=600, show_spinner=False)
+def validate_ticker(ticker: str) -> bool:
+    """Greitas, pigus patikrinimas, ar tickeris egzistuoja ir turi rinkos duomenų."""
+    try:
+        h = yf.Ticker(ticker).history(period="5d")
+        return not h.empty
+    except Exception:
+        return False
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_info(ticker: str):
+    return yf.Ticker(ticker).info or {}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_history(ticker: str, period: str):
+    return yf.Ticker(ticker).history(period=period)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_income_stmt(ticker: str):
+    return yf.Ticker(ticker).income_stmt
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_quarterly_income_stmt(ticker: str):
+    return yf.Ticker(ticker).quarterly_income_stmt
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_insider_transactions(ticker: str):
+    return yf.Ticker(ticker).insider_transactions
+
+
+# ------------------------------------------------------------------------------
+# 3. DUOMENŲ TRAUKIMAS IR APDOROJIMAS (PAGRINDINIS TICKERIS)
 # ------------------------------------------------------------------------------
 if ticker_input:
+
+    # --- Ticker validacija prieš pilną duomenų traukimą ---
+    if not validate_ticker(ticker_input):
+        st.error(
+            f"❌ Tickeris **{ticker_input}** nerastas arba šiuo metu neturi rinkos duomenų. "
+            f"Patikrinkite simbolį — pavyzdžiui: `AAPL`, `MSFT`, `GOOGL`, `TSLA`, `NVDA`."
+        )
+        st.stop()
+
     with st.spinner(f"Renkami ir skaičiuojami {ticker_input} duomenys..."):
         try:
-            t = yf.Ticker(ticker_input)
-            info = t.info or {}
-
-            hist_5y = t.history(period="5y")
+            info = fetch_info(ticker_input)
+            hist_5y = fetch_history(ticker_input, "5y")
 
             price = info.get("currentPrice") or info.get("regularMarketPrice")
             if (price is None or pd.isna(price)) and not hist_5y.empty:
@@ -307,65 +449,31 @@ if ticker_input:
 
             eps_growth_3y = None
             sales_growth_3y = None
-            eps_base_val, eps_latest_val = None, None
-            rev_base_val, rev_latest_val = None, None
-            eps_base_note, eps_latest_note = "", ""
-            rev_base_note, rev_latest_note = "", ""
 
             financials_years = []
             revenues_vals = []
             net_income_vals = []
+            financials_periods_q = []
+            revenues_vals_q = []
+            net_income_vals_q = []
 
             try:
-                inc = t.income_stmt
+                inc = fetch_income_stmt(ticker_input)
                 if inc is not None and not inc.empty:
+                    financials_years, revenues_vals, net_income_vals = extract_financials_series(
+                        inc, lambda c: pd.to_datetime(c).strftime("%Y"), max_cols=4
+                    )
+
                     valid_cols = sorted([c for c in inc.columns if pd.notna(c)])
-
-                    rev_row_candidates = ["Total Revenue", "Operating Revenue"]
-                    ni_row_candidates = ["Net Income", "Net Income Common Stockholders"]
-
-                    r_series, ni_series = None, None
-                    for rc in rev_row_candidates:
-                        if rc in inc.index:
-                            r_series = inc.loc[rc]
-                            break
-                    for nic in ni_row_candidates:
-                        if nic in inc.index:
-                            ni_series = inc.loc[nic]
-                            break
-
-                    recent_cols = valid_cols[-4:] if len(valid_cols) >= 4 else valid_cols
-                    for col in recent_cols:
-                        yr_str = pd.to_datetime(col).strftime("%Y")
-                        financials_years.append(yr_str)
-                        r_val = (
-                            r_series.loc[col]
-                            if r_series is not None and col in r_series.index
-                            else 0
-                        )
-                        ni_val = (
-                            ni_series.loc[col]
-                            if ni_series is not None and col in ni_series.index
-                            else 0
-                        )
-                        revenues_vals.append(float(r_val) if pd.notna(r_val) else 0.0)
-                        net_income_vals.append(float(ni_val) if pd.notna(ni_val) else 0.0)
-
                     if len(valid_cols) >= 4:
                         col_latest = valid_cols[-1]
                         col_base = valid_cols[-4]
-                        dt_latest = pd.to_datetime(col_latest).strftime("%Y-%m-%d")
-                        dt_base = pd.to_datetime(col_base).strftime("%Y-%m-%d")
 
                         for cand in ["Diluted EPS", "Basic EPS"]:
                             if cand in inc.index:
                                 eps_base_val = inc.loc[cand, col_base]
                                 eps_latest_val = inc.loc[cand, col_latest]
                                 eps_growth_3y = calc_cagr(eps_base_val, eps_latest_val, 3)
-                                eps_base_note = f"Yahoo Finance - Diluted/Basic EPS, FY {dt_base}"
-                                eps_latest_note = (
-                                    f"Yahoo Finance - Diluted/Basic EPS, FY {dt_latest}"
-                                )
                                 break
 
                         for cand in ["Total Revenue", "Operating Revenue"]:
@@ -373,31 +481,118 @@ if ticker_input:
                                 rev_base_val = inc.loc[cand, col_base]
                                 rev_latest_val = inc.loc[cand, col_latest]
                                 sales_growth_3y = calc_cagr(rev_base_val, rev_latest_val, 3)
-                                rev_base_note = f"Yahoo Finance - Total Revenue, FY {dt_base}"
-                                rev_latest_note = (
-                                    f"Yahoo Finance - Total Revenue, FY {dt_latest}"
-                                )
                                 break
+            except Exception:
+                pass
+
+            try:
+                inc_q = fetch_quarterly_income_stmt(ticker_input)
+                if inc_q is not None and not inc_q.empty:
+                    financials_periods_q, revenues_vals_q, net_income_vals_q = (
+                        extract_financials_series(inc_q, quarter_label, max_cols=8)
+                    )
+            except Exception:
+                pass
+
+            insider_df = None
+            total_buy, total_sell, net_flow = 0.0, 0.0, 0.0
+            monthly_insider_vol = {}
+
+            try:
+                ins = fetch_insider_transactions(ticker_input)
+                if ins is not None and not ins.empty:
+                    ins = ins.copy()
+                    date_col = None
+                    for col in ["Start Date", "Date", "Transaction Date"]:
+                        if col in ins.columns:
+                            date_col = col
+                            break
+
+                    if date_col:
+                        ins[date_col] = pd.to_datetime(ins[date_col], errors="coerce")
+                        ins = ins.dropna(subset=[date_col])
+                        cutoff = pd.Timestamp.now() - pd.Timedelta(days=365)
+                        ins_12m = ins[ins[date_col] >= cutoff].sort_values(
+                            date_col, ascending=False
+                        )
+
+                        if not ins_12m.empty:
+                            rows = []
+                            for _, r in ins_12m.iterrows():
+                                val = (
+                                    float(r.get("Value")) if pd.notna(r.get("Value")) else 0.0
+                                )
+                                txt = str(r.get("Transaction") or r.get("Text") or "")
+                                tx_type = classify_insider(txt)
+
+                                if tx_type == "Pirkimas":
+                                    total_buy += val
+                                elif tx_type == "Pardavimas":
+                                    total_sell += val
+
+                                m_key = r[date_col].strftime("%Y-%m")
+                                monthly_insider_vol[m_key] = (
+                                        monthly_insider_vol.get(m_key, 0.0) + val
+                                )
+
+                                rows.append(
+                                    {
+                                        "Data": r[date_col].strftime("%Y-%m-%d"),
+                                        "Asmuo": r.get("Insider", "N/A"),
+                                        "Pareigos": r.get("Position", ""),
+                                        "Sandoris": txt,
+                                        "Akcijos": (
+                                            f"{r.get('Shares'):,.0f}"
+                                            if pd.notna(r.get("Shares"))
+                                            else "N/A"
+                                        ),
+                                        "Suma": f"{val:,.2f}" if pd.notna(val) else "0.00",
+                                    }
+                                )
+
+                            insider_df = pd.DataFrame(rows)
+                            net_flow = total_buy - total_sell
             except Exception:
                 pass
 
             # 1 SEKCIJA: AKCIJOS KAINOS ISTORIJA (GRAFIKAS)
             st.subheader(f"{long_name} ({ticker_input})")
+
+            chart_placeholder = st.empty()
+            period_selector_placeholder = st.container()
+
+            with period_selector_placeholder:
+                period_label = st.selectbox(
+                    "📅 Kainos grafiko laikotarpis:",
+                    list(PERIOD_OPTIONS.keys()),
+                    index=3,
+                    key="price_chart_period",
+                )
+            selected_period = PERIOD_OPTIONS[period_label]
+            hist_display = (
+                hist_5y
+                if selected_period == "5y"
+                else fetch_history(ticker_input, selected_period)
+            )
+            if hist_display is None or hist_display.empty:
+                hist_display = hist_5y
+
             fig_price = go.Figure()
             fig_price.add_trace(
                 go.Scatter(
-                    x=hist_5y.index,
-                    y=hist_5y["Close"],
+                    x=hist_display.index,
+                    y=hist_display["Close"],
                     mode="lines",
                     name=f"Kaina ({cur})",
                     line=dict(color="#38bdf8", width=2),
                 )
             )
             fig_price.update_layout(
+                title=f"Kainos istorija ({period_label})",
                 paper_bgcolor="#0F172A",
                 plot_bgcolor="#0F172A",
                 font=dict(color="#FFFFFF"),
-                margin=dict(l=20, r=20, t=30, b=20),
+                margin=dict(l=20, r=20, t=40, b=20),
                 xaxis=dict(
                     showgrid=True, gridcolor="#334155", title="Data", color="#FFFFFF"
                 ),
@@ -408,7 +603,8 @@ if ticker_input:
                     color="#FFFFFF",
                 ),
             )
-            st.plotly_chart(fig_price, use_container_width=True)
+            with chart_placeholder:
+                st.plotly_chart(fig_price, use_container_width=True)
 
             st.divider()
 
@@ -416,27 +612,26 @@ if ticker_input:
             st.subheader("KAINOS POKYTIS")
             df_price = pd.DataFrame()
             if not hist_5y.empty and len(hist_5y) > 1:
-                hist_5y.index = hist_5y.index.tz_localize(None)
+                hist_5y_local = hist_5y.copy()
+                hist_5y_local.index = hist_5y_local.index.tz_localize(None)
                 curr_p = price
-                now_dt = hist_5y.index[-1]
-
+                now_dt = hist_5y_local.index[-1]
 
                 def get_historical_price(days_back=None, ytd=False):
                     if ytd:
                         target_dt = pd.Timestamp(year=now_dt.year, month=1, day=1)
                     else:
                         target_dt = now_dt - pd.Timedelta(days=days_back)
-                    sub = hist_5y[hist_5y.index <= target_dt]
+                    sub = hist_5y_local[hist_5y_local.index <= target_dt]
                     if not sub.empty:
                         return float(sub["Close"].iloc[-1])
-                    return float(hist_5y["Close"].iloc[0])
-
+                    return float(hist_5y_local["Close"].iloc[0])
 
                 p_1m = get_historical_price(days_back=30)
                 p_6m = get_historical_price(days_back=182)
                 p_ytd = get_historical_price(ytd=True)
                 p_1y = get_historical_price(days_back=365)
-                p_5y = float(hist_5y["Close"].iloc[0])
+                p_5y = float(hist_5y_local["Close"].iloc[0])
 
                 periods_data = [
                     ("5y", p_5y),
@@ -481,39 +676,11 @@ if ticker_input:
             mgmt_own = info.get("heldPercentInsiders")
             mgmt_own_val = mgmt_own if mgmt_own is not None else "N/A"
 
-            div_yield = info.get("dividendYield")
-            if div_yield is not None and not pd.isna(div_yield):
-                div_yield_float = float(div_yield)
-                if div_yield_float < 0.1:
-                    div_yield_val = div_yield_float * 100
-                else:
-                    div_yield_val = div_yield_float
-            else:
+            div_yield_val = compute_div_yield_pct(info)
+            if div_yield_val is None:
                 div_yield_val = "N/A"
 
             d_e = info.get("debtToEquity")
-
-
-            def fmt_val(v, decimals=2, is_pct=False):
-                if v is None or pd.isna(v):
-                    return "N/A"
-                try:
-                    val = float(v)
-                    if is_pct:
-                        return f"{val:.2f}%"
-                    return f"{val:.{decimals}f}"
-                except (ValueError, TypeError):
-                    return str(v)
-
-
-            def fmt_large(v):
-                if v is None or pd.isna(v):
-                    return "N/A"
-                try:
-                    return f"{float(v):,.0f}"
-                except (ValueError, TypeError):
-                    return str(v)
-
 
             main_metrics_data = [
                 {
@@ -536,7 +703,7 @@ if ticker_input:
                 {
                     "Rodiklis": "3 Year EPS Growth Rate",
                     "Reikšmė": (
-                        f"{eps_growth_3y:.2f}"
+                        f"{eps_growth_3y:.2f}%"
                         if eps_growth_3y is not None
                         else "N/A"
                     ),
@@ -554,7 +721,7 @@ if ticker_input:
                 {
                     "Rodiklis": "3-Year Sales Growth Rate",
                     "Reikšmė": (
-                        f"{sales_growth_3y:.2f}"
+                        f"{sales_growth_3y:.2f}%"
                         if sales_growth_3y is not None
                         else "N/A"
                     ),
@@ -630,15 +797,49 @@ if ticker_input:
 
             # 4 SEKCIJA: REVENUES, NET INCOME (GRAFIKAS SU DATA LABELS)
             st.subheader("📊 REVENUES, NET INCOME")
-            if financials_years and revenues_vals and net_income_vals:
-                rev_b_formatted = [f"{v / 1e9:.1f}B" for v in revenues_vals]
-                ni_b_formatted = [f"{v / 1e9:.1f}B" for v in net_income_vals]
+
+            has_annual_fin = bool(financials_years and revenues_vals and net_income_vals)
+            has_quarterly_fin = bool(
+                financials_periods_q and revenues_vals_q and net_income_vals_q
+            )
+
+            if has_annual_fin or has_quarterly_fin:
+                fin_chart_placeholder = st.empty()
+                fin_period_placeholder = st.container()
+
+                fin_period_options = []
+                if has_annual_fin:
+                    fin_period_options.append("Metai")
+                if has_quarterly_fin:
+                    fin_period_options.append("Ketvirčiai")
+
+                with fin_period_placeholder:
+                    fin_period_choice = st.radio(
+                        "📅 Rodyti pagal:",
+                        fin_period_options,
+                        horizontal=True,
+                        key="fin_period_choice",
+                    )
+
+                if fin_period_choice == "Ketvirčiai":
+                    labels_fin = financials_periods_q
+                    rev_fin = revenues_vals_q
+                    ni_fin = net_income_vals_q
+                    x_title = "Ketvirtis"
+                else:
+                    labels_fin = financials_years
+                    rev_fin = revenues_vals
+                    ni_fin = net_income_vals
+                    x_title = "Metai"
+
+                rev_b_formatted = [f"{v / 1e9:.1f}B" for v in rev_fin]
+                ni_b_formatted = [f"{v / 1e9:.1f}B" for v in ni_fin]
 
                 fig_rev_ni = go.Figure()
                 fig_rev_ni.add_trace(
                     go.Bar(
-                        x=financials_years,
-                        y=[v / 1e9 for v in revenues_vals],
+                        x=labels_fin,
+                        y=[v / 1e9 for v in rev_fin],
                         name="Revenues (USD mlrd.)",
                         marker_color="#38bdf8",
                         text=rev_b_formatted,
@@ -647,8 +848,8 @@ if ticker_input:
                 )
                 fig_rev_ni.add_trace(
                     go.Bar(
-                        x=financials_years,
-                        y=[v / 1e9 for v in net_income_vals],
+                        x=labels_fin,
+                        y=[v / 1e9 for v in ni_fin],
                         name="Net Income (USD mlrd.)",
                         marker_color="#34d399",
                         text=ni_b_formatted,
@@ -662,7 +863,7 @@ if ticker_input:
                     font=dict(color="#FFFFFF"),
                     margin=dict(l=20, r=20, t=30, b=20),
                     xaxis=dict(
-                        title="Metai", showgrid=True, gridcolor="#334155", color="#FFFFFF"
+                        title=x_title, showgrid=True, gridcolor="#334155", color="#FFFFFF"
                     ),
                     yaxis=dict(
                         title="Suma (USD mlrd.)",
@@ -674,7 +875,8 @@ if ticker_input:
                         orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
                     ),
                 )
-                st.plotly_chart(fig_rev_ni, use_container_width=True)
+                with fin_chart_placeholder:
+                    st.plotly_chart(fig_rev_ni, use_container_width=True)
             else:
                 st.info("Finansinių ataskaitų duomenų pajamų ir pelno grafikui nerasta.")
 
@@ -682,66 +884,6 @@ if ticker_input:
 
             # 5 SEKCIJA: INSIDER PREKYBA
             st.subheader("👥 INSIDER PREKYBA (paskutiniai 12 mėn.)")
-
-            insider_df = None
-            total_buy, total_sell, net_flow = 0.0, 0.0, 0.0
-            monthly_insider_vol = {}
-
-            try:
-                ins = t.insider_transactions
-                if ins is not None and not ins.empty:
-                    date_col = None
-                    for col in ["Start Date", "Date", "Transaction Date"]:
-                        if col in ins.columns:
-                            date_col = col
-                            break
-
-                    if date_col:
-                        ins[date_col] = pd.to_datetime(ins[date_col], errors="coerce")
-                        ins = ins.dropna(subset=[date_col])
-                        cutoff = pd.Timestamp.now() - pd.Timedelta(days=365)
-                        ins_12m = ins[ins[date_col] >= cutoff].sort_values(
-                            date_col, ascending=False
-                        )
-
-                        if not ins_12m.empty:
-                            rows = []
-                            for _, r in ins_12m.iterrows():
-                                val = (
-                                    float(r.get("Value")) if pd.notna(r.get("Value")) else 0.0
-                                )
-                                txt = str(r.get("Transaction") or r.get("Text") or "")
-                                tx_type = classify_insider(txt)
-
-                                if tx_type == "Pirkimas":
-                                    total_buy += val
-                                elif tx_type == "Pardavimas":
-                                    total_sell += val
-
-                                m_key = r[date_col].strftime("%Y-%m")
-                                monthly_insider_vol[m_key] = (
-                                        monthly_insider_vol.get(m_key, 0.0) + val
-                                )
-
-                                rows.append(
-                                    {
-                                        "Data": r[date_col].strftime("%Y-%m-%d"),
-                                        "Asmuo": r.get("Insider", "N/A"),
-                                        "Pareigos": r.get("Position", ""),
-                                        "Sandoris": txt,
-                                        "Akcijos": (
-                                            f"{r.get('Shares'):,.0f}"
-                                            if pd.notna(r.get("Shares"))
-                                            else "N/A"
-                                        ),
-                                        "Suma": f"{val:,.2f}" if pd.notna(val) else "0.00",
-                                    }
-                                )
-
-                            insider_df = pd.DataFrame(rows)
-                            net_flow = total_buy - total_sell
-            except Exception:
-                pass
 
             col_i1, col_i2, col_i3 = st.columns(3)
             col_i1.metric("Iš viso pirkta", format_number(total_buy, currency=cur))
@@ -763,7 +905,9 @@ if ticker_input:
             st.subheader("📈 MĖNESINĖ INSIDER APYVARTA VS. KAINA")
             df_chart = pd.DataFrame()
             if not hist_5y.empty:
-                end_dt = hist_5y.index[-1]
+                hist_5y_naive = hist_5y.copy()
+                hist_5y_naive.index = hist_5y_naive.index.tz_localize(None)
+                end_dt = hist_5y_naive.index[-1]
                 try:
                     m_ends = pd.date_range(end=end_dt, periods=13, freq="ME")
                 except ValueError:
@@ -771,7 +915,7 @@ if ticker_input:
 
                 chart_data = []
                 for me in m_ends:
-                    sub_p = hist_5y[hist_5y.index <= me]
+                    sub_p = hist_5y_naive[hist_5y_naive.index <= me]
                     p_at = float(sub_p["Close"].iloc[-1]) if not sub_p.empty else 0.0
                     m_str = me.strftime("%Y-%m")
                     v_at = monthly_insider_vol.get(m_str, 0.0)
@@ -820,16 +964,8 @@ if ticker_input:
             # 7 SEKCIJA: ANALITIKŲ REKOMENDACIJA
             st.subheader("🎯 ANALITIKŲ REKOMENDACIJA")
 
-            rec_key = info.get("recommendationKey", "").lower()
-            rec_map = {
-                "strong_buy": "STRONG BUY",
-                "buy": "BUY",
-                "hold": "HOLD",
-                "underperform": "UNDERPERFORM",
-                "sell": "SELL",
-                "strong_sell": "STRONG SELL",
-            }
-            rec_lt = rec_map.get(rec_key, rec_key.upper() if rec_key else "N/A")
+            rec_key = (info.get("recommendationKey") or "").lower()
+            rec_lt = REC_MAP.get(rec_key, rec_key.upper() if rec_key else "N/A")
 
             col_rec1, col_rec2, col_rec3 = st.columns(3)
             col_rec1.metric("Rekomendacija", rec_lt)
@@ -846,8 +982,103 @@ if ticker_input:
                 else "N/A",
             )
 
+            st.divider()
+
+            # 8 SEKCIJA: PALYGINIMAS SU KITAIS TICKERIAIS (jei įvesti)
+            if compare_tickers:
+                st.subheader("🆚 PALYGINIMAS SU KITAIS TICKERIAIS")
+
+                all_compare = [ticker_input] + compare_tickers
+                compare_rows = []
+                normalized_frames = {}
+                invalid_compare = []
+
+                with st.spinner("Renkami palyginimo duomenys..."):
+                    for tk in all_compare:
+                        if not validate_ticker(tk):
+                            invalid_compare.append(tk)
+                            continue
+                        try:
+                            c_info = fetch_info(tk)
+                            c_hist = fetch_history(tk, selected_period)
+                            if c_hist is None or c_hist.empty:
+                                invalid_compare.append(tk)
+                                continue
+
+                            c_price = (
+                                c_info.get("currentPrice")
+                                or c_info.get("regularMarketPrice")
+                                or float(c_hist["Close"].iloc[-1])
+                            )
+                            c_rec_key = (c_info.get("recommendationKey") or "").lower()
+                            c_rec = REC_MAP.get(c_rec_key, c_rec_key.upper() if c_rec_key else "N/A")
+                            c_div = compute_div_yield_pct(c_info)
+
+                            compare_rows.append(
+                                {
+                                    "Tickeris": tk,
+                                    "Pavadinimas": c_info.get("longName", tk),
+                                    "Kaina": fmt_val(c_price),
+                                    "Forward P/E": fmt_val(c_info.get("forwardPE")),
+                                    "ROE %": (
+                                        f"{c_info.get('returnOnEquity') * 100:.2f}"
+                                        if c_info.get("returnOnEquity")
+                                        else "N/A"
+                                    ),
+                                    "Div. Yield %": (
+                                        f"{c_div:.2f}" if c_div is not None else "N/A"
+                                    ),
+                                    "1y Target": fmt_val(c_info.get("targetMeanPrice")),
+                                    "Rekomendacija": c_rec,
+                                }
+                            )
+                            normalized_frames[tk] = c_hist["Close"] / c_hist["Close"].iloc[0] * 100
+                        except Exception:
+                            invalid_compare.append(tk)
+
+                if normalized_frames:
+                    colors = ["#38bdf8", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#f87171", "#22d3ee"]
+                    fig_cmp = go.Figure()
+                    for i, (tk, series) in enumerate(normalized_frames.items()):
+                        fig_cmp.add_trace(
+                            go.Scatter(
+                                x=series.index,
+                                y=series.values,
+                                mode="lines",
+                                name=tk,
+                                line=dict(color=colors[i % len(colors)], width=2),
+                            )
+                        )
+                    fig_cmp.update_layout(
+                        title=f"Normalizuota kaina (bazė=100) — {period_label}",
+                        paper_bgcolor="#0F172A",
+                        plot_bgcolor="#0F172A",
+                        font=dict(color="#FFFFFF"),
+                        margin=dict(l=20, r=20, t=40, b=20),
+                        xaxis=dict(showgrid=True, gridcolor="#334155", color="#FFFFFF"),
+                        yaxis=dict(
+                            showgrid=True,
+                            gridcolor="#334155",
+                            title="Indeksas (100 = laikotarpio pradžia)",
+                            color="#FFFFFF",
+                        ),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    )
+                    st.plotly_chart(fig_cmp, use_container_width=True)
+
+                if compare_rows:
+                    df_compare = pd.DataFrame(compare_rows)
+                    st.dataframe(df_compare, use_container_width=True, hide_index=True)
+
+                if invalid_compare:
+                    st.warning(
+                        f"⚠️ Nepavyko rasti duomenų šiems tickeriams: {', '.join(invalid_compare)}"
+                    )
+
+                st.divider()
+
             # ------------------------------------------------------------------------------
-            # 8. EXCEL EKSPORTAS NAUDOJANT OPENPYXL
+            # 9. EXCEL EKSPORTAS NAUDOJANT OPENPYXL
             # ------------------------------------------------------------------------------
             output = BytesIO()
             wb = openpyxl.Workbook()
@@ -900,7 +1131,6 @@ if ticker_input:
             ).font = subtitle_font
             current_row += 2
 
-
             def write_section_header(title_text, max_cols=6):
                 global current_row
                 ws.merge_cells(
@@ -915,7 +1145,6 @@ if ticker_input:
                 cell.alignment = Alignment(horizontal="left", vertical="center")
                 current_row += 1
 
-
             def write_table_headers(headers):
                 global current_row
                 for col_idx, h in enumerate(headers, 1):
@@ -927,7 +1156,6 @@ if ticker_input:
                     )
                     cell.border = border_all
                 current_row += 1
-
 
             # 1. PAGRINDINIAI RODIKLIAI
             write_section_header("PAGRINDINIAI RODIKLIAI")
@@ -951,7 +1179,7 @@ if ticker_input:
             write_section_header("KAINOS POKYTIS")
             write_table_headers(["Laikotarpis", "Kaina praeityje (USD)", "Pokytis %"])
 
-            if "df_price" in locals() and not df_price.empty:
+            if not df_price.empty:
                 for idx, r in df_price.iterrows():
                     c1 = ws.cell(row=current_row, column=1, value=r["Laikotarpis"])
                     c2 = ws.cell(
@@ -987,7 +1215,7 @@ if ticker_input:
                 current_row += 1
             current_row += 1
 
-            if "insider_df" in locals() and insider_df is not None and not insider_df.empty:
+            if insider_df is not None and not insider_df.empty:
                 write_table_headers(["Data", "Asmuo", "Pareigos", "Sandoris", "Akcijos", "Suma"])
                 for idx, r in insider_df.iterrows():
                     c1 = ws.cell(row=current_row, column=1, value=r["Data"])
@@ -1013,7 +1241,7 @@ if ticker_input:
 
             # 4. MĖNESINĖ INSIDER APYVARTA VS KAINA
             write_section_header("MĖNESINĖ INSIDER APYVARTA VS. KAINA")
-            if "df_chart" in locals() and not df_chart.empty:
+            if not df_chart.empty:
                 write_table_headers(["Mėnuo", f"Kaina ({cur})", f"Insider apyvarta ({cur})"])
                 for idx, r in df_chart.iterrows():
                     c1 = ws.cell(row=current_row, column=1, value=r["Mėnuo"])
@@ -1072,6 +1300,23 @@ if ticker_input:
                         c.alignment = Alignment(horizontal="right")
                 current_row += 1
 
+            # 6. PALYGINIMAS SU KITAIS TICKERIAIS (jei taikoma)
+            if compare_tickers and "compare_rows" in dir() and compare_rows:
+                current_row += 1
+                write_section_header("PALYGINIMAS SU KITAIS TICKERIAIS")
+                comp_headers = list(compare_rows[0].keys())
+                write_table_headers(comp_headers)
+                for idx, row_dict in enumerate(compare_rows):
+                    for col_idx, key in enumerate(comp_headers, 1):
+                        c = ws.cell(row=current_row, column=col_idx, value=row_dict[key])
+                        c.font = regular_font
+                        c.border = border_all
+                        if idx % 2 == 1:
+                            c.fill = zebra_fill
+                        if col_idx > 2:
+                            c.alignment = Alignment(horizontal="right")
+                    current_row += 1
+
             for col in ws.columns:
                 max_len = 0
                 col_letter = get_column_letter(col[0].column)
@@ -1086,7 +1331,7 @@ if ticker_input:
             sidebar_download_placeholder.download_button(
                 label="📥 Parsisiųsti Excel",
                 data=output,
-                file_name=f"{ticker_input}_analize.xlsx",
+                file_name=f"{ticker_input}_analize_{dt.date.today()}.xlsx",
                 mime=(
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ),
