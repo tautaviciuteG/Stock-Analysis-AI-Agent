@@ -150,14 +150,6 @@ PERIOD_OPTIONS = {
     "Max": "max",
 }
 
-st.sidebar.subheader("✍️ Rankinis IBD įvedimas")
-eps_rating_input = st.sidebar.number_input(
-    "EPS rating (1-99 balai):", min_value=0, max_value=99, value=0, step=1
-)
-smr_rating_input = st.sidebar.selectbox(
-    "SMR Rating (A-E balai):", ["-", "A", "B", "C", "D", "E"]
-)
-
 sidebar_download_placeholder = st.sidebar.empty()
 
 # Pagrindinio ir palyginamųjų tickerių išskyrimas
@@ -699,13 +691,6 @@ if ticker_input:
                     "Šaltinis / pastaba": "Yahoo Finance - forwardPE",
                 },
                 {
-                    "Rodiklis": "EPS rating",
-                    "Reikšmė": eps_rating_input if eps_rating_input > 0 else "N/A",
-                    "Šaltinis / pastaba": (
-                        "IBD (Investors.com) - reikia rankinio įvedimo, 1-99 balas"
-                    ),
-                },
-                {
                     "Rodiklis": "3 Year EPS Growth Rate",
                     "Reikšmė": (
                         f"{eps_growth_3y:.2f}%"
@@ -714,13 +699,6 @@ if ticker_input:
                     ),
                     "Šaltinis / pastaba": (
                         "Apskaičiuota (CAGR) iš Yahoo Finance finansinių ataskaitų"
-                    ),
-                },
-                {
-                    "Rodiklis": "SMR Rating",
-                    "Reikšmė": smr_rating_input if smr_rating_input != "-" else "N/A",
-                    "Šaltinis / pastaba": (
-                        "IBD (Investors.com) - reikia rankinio įvedimo, A-E balas"
                     ),
                 },
                 {
