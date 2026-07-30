@@ -56,10 +56,6 @@ st.markdown(
         border-radius: 10px !important;
     }
 
-    /* ==========================================================================
-       SUVIENODINTAS STILIUS: NumberInput (+/-) IR Selectbox (Rodyklė)
-       ========================================================================== */
-
     div[data-testid="stNumberInput"] > div > div,
     div[data-testid="stSelectbox"] > div > div {
         background-color: #FFFFFF !important;
@@ -246,7 +242,6 @@ def compute_div_yield_pct(info):
     if dy is None or pd.isna(dy):
         return None
     dy = float(dy)
-    # Kai kurios yfinance versijos grąžina dalį (0.02), kitos - jau procentą (2.0)
     return dy * 100 if dy < 0.1 else dy
 
 
@@ -258,7 +253,11 @@ def quarter_label(col):
 
 
 def extract_financials_series(inc_df, label_func, max_cols=4):
-    """Ištraukia (laikotarpių žymes, pajamas, grynąjį pelną) iš income statement DataFrame."""
+    """Ištraukia (laikotarpių žymes, pajamas, grynąjį pelną) iš income statement DataFrame.
+
+    Praleidžia stulpelius (laikotarpius), kuriems Yahoo Finance neturi jokių
+    pajamų/pelno reikšmių, kad grafike neatsirastų tuščių/nulinių stulpelių.
+    """
     labels, revenues, net_incomes = [], [], []
     if inc_df is None or inc_df.empty:
         return labels, revenues, net_incomes
@@ -277,7 +276,16 @@ def extract_financials_series(inc_df, label_func, max_cols=4):
             ni_series = inc_df.loc[nic]
             break
 
-    recent_cols = valid_cols[-max_cols:] if len(valid_cols) >= max_cols else valid_cols
+    cols_with_data = []
+    for col in valid_cols:
+        r_val = r_series.loc[col] if r_series is not None and col in r_series.index else None
+        ni_val = ni_series.loc[col] if ni_series is not None and col in ni_series.index else None
+        if (r_val is not None and pd.notna(r_val)) or (ni_val is not None and pd.notna(ni_val)):
+            cols_with_data.append(col)
+
+    recent_cols = (
+        cols_with_data[-max_cols:] if len(cols_with_data) >= max_cols else cols_with_data
+    )
     for col in recent_cols:
         labels.append(label_func(col))
         r_val = (
@@ -380,10 +388,8 @@ def validate_ticker(ticker: str) -> bool:
     """Greitas patikrinimas, ar tickeris egzistuoja."""
     try:
         t = yf.Ticker(ticker)
-        # fast_info veikia greitai ir patikimai tikrina kainą/simbolį
         if t.fast_info.get("lastPrice") is not None:
             return True
-        # Jei fast_info neturi kainos, tikriname per history
         h = t.history(period="1d")
         return not h.empty
     except Exception:
@@ -420,7 +426,6 @@ def fetch_insider_transactions(ticker: str):
 # ------------------------------------------------------------------------------
 if ticker_input:
 
-    # --- Ticker validacija prieš pilną duomenų traukimą ---
     if not validate_ticker(ticker_input):
         st.error(
             f"❌ Tickeris **{ticker_input}** nerastas arba šiuo metu neturi rinkos duomenų. "
@@ -493,7 +498,8 @@ if ticker_input:
 
             insider_df = None
             total_buy, total_sell, net_flow = 0.0, 0.0, 0.0
-            monthly_insider_vol = {}
+            monthly_insider_buy = {}
+            monthly_insider_sell = {}
 
             try:
                 ins = fetch_insider_transactions(ticker_input)
@@ -528,9 +534,14 @@ if ticker_input:
                                     total_sell += val
 
                                 m_key = r[date_col].strftime("%Y-%m")
-                                monthly_insider_vol[m_key] = (
-                                        monthly_insider_vol.get(m_key, 0.0) + val
-                                )
+                                if tx_type == "Pirkimas":
+                                    monthly_insider_buy[m_key] = (
+                                        monthly_insider_buy.get(m_key, 0.0) + val
+                                    )
+                                elif tx_type == "Pardavimas":
+                                    monthly_insider_sell[m_key] = (
+                                        monthly_insider_sell.get(m_key, 0.0) + val
+                                    )
 
                                 rows.append(
                                     {
@@ -553,7 +564,27 @@ if ticker_input:
                 pass
 
             # 1 SEKCIJA: AKCIJOS KAINOS ISTORIJA (GRAFIKAS)
-            st.subheader(f"{long_name} ({ticker_input})")
+            price_chg_pct = None
+            price_chg_abs = None
+            if len(hist_5y) > 1:
+                prev_close = float(hist_5y["Close"].iloc[-2])
+                if prev_close:
+                    price_chg_abs = price - prev_close
+                    price_chg_pct = (price_chg_abs / prev_close) * 100
+
+            header_col1, header_col2 = st.columns([3, 1])
+            with header_col1:
+                st.subheader(f"{long_name} ({ticker_input})")
+            with header_col2:
+                st.metric(
+                    label=f"Kaina ({cur})",
+                    value=f"{price:,.2f}",
+                    delta=(
+                        f"{price_chg_abs:+.2f} ({price_chg_pct:+.2f}%)"
+                        if price_chg_pct is not None
+                        else None
+                    ),
+                )
 
             chart_placeholder = st.empty()
             period_selector_placeholder = st.container()
@@ -802,10 +833,11 @@ if ticker_input:
 
                 with fin_period_placeholder:
                     fin_period_choice = st.radio(
-                        "📅 Rodyti pagal:",
+                        "Rodyti pagal:",
                         fin_period_options,
                         horizontal=True,
                         key="fin_period_choice",
+                        label_visibility="collapsed",
                     )
 
                 if fin_period_choice == "Ketvirčiai":
@@ -859,7 +891,12 @@ if ticker_input:
                         color="#FFFFFF",
                     ),
                     legend=dict(
-                        orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1,
+                        font=dict(color="#FFFFFF"),
                     ),
                 )
                 with fin_chart_placeholder:
@@ -905,12 +942,14 @@ if ticker_input:
                     sub_p = hist_5y_naive[hist_5y_naive.index <= me]
                     p_at = float(sub_p["Close"].iloc[-1]) if not sub_p.empty else 0.0
                     m_str = me.strftime("%Y-%m")
-                    v_at = monthly_insider_vol.get(m_str, 0.0)
+                    buy_at = monthly_insider_buy.get(m_str, 0.0)
+                    sell_at = monthly_insider_sell.get(m_str, 0.0)
                     chart_data.append(
                         {
                             "Mėnuo": m_str,
                             "Kaina (USD)": round(p_at, 2),
-                            "Insider apyvarta (USD)": round(v_at, 2),
+                            "Insider pirkimai (USD)": round(buy_at, 2),
+                            "Insider pardavimai (USD)": round(sell_at, 2),
                         }
                     )
 
@@ -920,10 +959,20 @@ if ticker_input:
                 fig.add_trace(
                     go.Bar(
                         x=df_chart["Mėnuo"],
-                        y=df_chart["Insider apyvarta (USD)"],
-                        name=f"Insider Apyvarta ({cur})",
-                        marker_color="#38bdf8",
-                        opacity=0.85,
+                        y=df_chart["Insider pirkimai (USD)"],
+                        name=f"Insider pirkimai ({cur})",
+                        marker_color="#34d399",
+                        opacity=0.9,
+                    ),
+                    secondary_y=False,
+                )
+                fig.add_trace(
+                    go.Bar(
+                        x=df_chart["Mėnuo"],
+                        y=df_chart["Insider pardavimai (USD)"],
+                        name=f"Insider pardavimai ({cur})",
+                        marker_color="#ef4444",
+                        opacity=0.9,
                     ),
                     secondary_y=False,
                 )
@@ -933,16 +982,25 @@ if ticker_input:
                         y=df_chart["Kaina (USD)"],
                         name=f"Akcijos Kaina ({cur})",
                         mode="lines+markers",
-                        line=dict(color="#10b981", width=3),
+                        line=dict(color="#38bdf8", width=3),
                         marker=dict(size=6),
                     ),
                     secondary_y=True,
                 )
                 fig.update_layout(
+                    barmode="group",
                     paper_bgcolor="#0F172A",
                     plot_bgcolor="#0F172A",
                     font=dict(color="#FFFFFF"),
                     margin=dict(l=20, r=20, t=30, b=20),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1,
+                        font=dict(color="#FFFFFF"),
+                    ),
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -953,20 +1011,18 @@ if ticker_input:
 
             rec_key = (info.get("recommendationKey") or "").lower()
             rec_lt = REC_MAP.get(rec_key, rec_key.upper() if rec_key else "N/A")
+            rec_mean_val = info.get("recommendationMean")
+            analyst_count_val = info.get("numberOfAnalystOpinions")
 
             col_rec1, col_rec2, col_rec3 = st.columns(3)
             col_rec1.metric("Rekomendacija", rec_lt)
             col_rec2.metric(
                 "Vidutinis balas",
-                f"{info.get('recommendationMean'):.2f}"
-                if info.get("recommendationMean")
-                else "N/A",
+                f"{rec_mean_val:.2f}" if rec_mean_val else "N/A",
             )
             col_rec3.metric(
                 "Analitikų skaičius",
-                str(info.get("numberOfAnalystOpinions"))
-                if info.get("numberOfAnalystOpinions")
-                else "N/A",
+                str(analyst_count_val) if analyst_count_val else "N/A",
             )
 
             st.divider()
@@ -1049,7 +1105,14 @@ if ticker_input:
                             title="Indeksas (100 = laikotarpio pradžia)",
                             color="#FFFFFF",
                         ),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1,
+                            font=dict(color="#FFFFFF"),
+                        ),
                     )
                     st.plotly_chart(fig_cmp, use_container_width=True)
 
@@ -1065,7 +1128,7 @@ if ticker_input:
                 st.divider()
 
             # ------------------------------------------------------------------------------
-            # 9. EXCEL EKSPORTAS NAUDOJANT OPENPYXL
+            # 10. EXCEL EKSPORTAS NAUDOJANT OPENPYXL
             # ------------------------------------------------------------------------------
             output = BytesIO()
             wb = openpyxl.Workbook()
@@ -1229,18 +1292,26 @@ if ticker_input:
             # 4. MĖNESINĖ INSIDER APYVARTA VS KAINA
             write_section_header("MĖNESINĖ INSIDER APYVARTA VS. KAINA")
             if not df_chart.empty:
-                write_table_headers(["Mėnuo", f"Kaina ({cur})", f"Insider apyvarta ({cur})"])
+                write_table_headers(
+                    [
+                        "Mėnuo",
+                        f"Kaina ({cur})",
+                        f"Insider pirkimai ({cur})",
+                        f"Insider pardavimai ({cur})",
+                    ]
+                )
                 for idx, r in df_chart.iterrows():
                     c1 = ws.cell(row=current_row, column=1, value=r["Mėnuo"])
                     c2 = ws.cell(row=current_row, column=2, value=r["Kaina (USD)"])
-                    c3 = ws.cell(row=current_row, column=3, value=r["Insider apyvarta (USD)"])
+                    c3 = ws.cell(row=current_row, column=3, value=r["Insider pirkimai (USD)"])
+                    c4 = ws.cell(row=current_row, column=4, value=r["Insider pardavimai (USD)"])
 
-                    for col_idx, c in enumerate([c1, c2, c3], 1):
+                    for col_idx, c in enumerate([c1, c2, c3, c4], 1):
                         c.font = regular_font
                         c.border = border_all
                         if idx % 2 == 1:
                             c.fill = zebra_fill
-                        if col_idx in [2, 3]:
+                        if col_idx in [2, 3, 4]:
                             c.alignment = Alignment(horizontal="right")
                     current_row += 1
             else:
@@ -1261,18 +1332,12 @@ if ticker_input:
                 ],
                 [
                     "Vidutinis balas (1=Strong Buy, 5=Strong Sell)",
-                    (
-                        f"{info.get('recommendationMean'):.2f}"
-                        if info.get("recommendationMean")
-                        else "N/A"
-                    ),
+                    f"{rec_mean_val:.2f}" if rec_mean_val else "N/A",
                     "Yahoo Finance - recommendationMean",
                 ],
                 [
                     "Analitikų skaičius",
-                    info.get("numberOfAnalystOpinions")
-                    if info.get("numberOfAnalystOpinions")
-                    else "N/A",
+                    analyst_count_val if analyst_count_val else "N/A",
                     "Yahoo Finance - numberOfAnalystOpinions",
                 ],
             ]
