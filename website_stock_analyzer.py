@@ -385,9 +385,14 @@ def style_insider_df(df):
 # ------------------------------------------------------------------------------
 @st.cache_data(ttl=600, show_spinner=False)
 def validate_ticker(ticker: str) -> bool:
-    """Greitas, pigus patikrinimas, ar tickeris egzistuoja ir turi rinkos duomenų."""
+    """Greitas patikrinimas, ar tickeris egzistuoja."""
     try:
-        h = yf.Ticker(ticker).history(period="5d")
+        t = yf.Ticker(ticker)
+        # fast_info veikia greitai ir patikimai tikrina kainą/simbolį
+        if t.fast_info.get("lastPrice") is not None:
+            return True
+        # Jei fast_info neturi kainos, tikriname per history
+        h = t.history(period="1d")
         return not h.empty
     except Exception:
         return False
@@ -741,7 +746,11 @@ if ticker_input:
                 },
                 {
                     "Rodiklis": "Total Debt/Equity",
-                    "Reikšmė": fmt_val(d_e),
+                    "Reikšmė": (
+                        f"{d_e:.2f}%"
+                        if d_e is not None and not pd.isna(d_e)
+                        else "N/A"
+                    ),
                     "Šaltinis / pastaba": "Yahoo Finance - debtToEquity (mrq)",
                 },
                 {
@@ -752,8 +761,8 @@ if ticker_input:
                 {
                     "Rodiklis": "ROE",
                     "Reikšmė": (
-                        f"{info.get('returnOnEquity') * 100:.2f}"
-                        if info.get("returnOnEquity")
+                        f"{info.get('returnOnEquity') * 100:.2f}%"
+                        if info.get("returnOnEquity") is not None
                         else "N/A"
                     ),
                     "Šaltinis / pastaba": "Yahoo Finance - returnOnEquity (%)",
@@ -761,7 +770,7 @@ if ticker_input:
                 {
                     "Rodiklis": "MGMT owns",
                     "Reikšmė": (
-                        f"{mgmt_own_val * 100:.2f}"
+                        f"{mgmt_own_val * 100:.2f}%"
                         if isinstance(mgmt_own_val, (int, float))
                         else str(mgmt_own_val)
                     ),
