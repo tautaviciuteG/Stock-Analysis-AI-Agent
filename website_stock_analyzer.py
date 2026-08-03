@@ -24,25 +24,20 @@ st.markdown(
     """
 <style>
     .stApp { background-color: #FFFFFF !important; color: #0F172A !important; }
-    [data-testid="stSidebar"] { background-color: #F8FAFC !important; border-right: 1px solid #E2E8F0 !important; }
 
-    /* Visi pagrindiniai tekstai, paragrafai ir sąrašai */
-    p, span, label, li, [data-testid="stWidgetLabel"] p { color: #0F172A !important; }
-    label, [data-testid="stWidgetLabel"] { font-weight: 600 !important; margin-bottom: 4px !important; }
-    [data-testid="stMetricValue"] { font-size: 1.4rem !important; font-weight: 700 !important; color: #0F172A !important; }
-    [data-testid="stMetricLabel"] p { color: #475569 !important; }
-    h1, h2, h3, h4, h5, h6 { color: #0F172A !important; font-weight: 700 !important; }
+    .sidebar-app-title {
+        color: #0F172A;
+        font-size: 1.25rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin: 0 0 10px 0;
+        padding: 0 0 8px 0;
+        border-bottom: 1px solid #CBD5E1;
+    }
 
-    /* Nuorodos tekstas (kad išliktų mėlynos ir pastebimos) */
-    a, a span { color: #2563EB !important; text-decoration: underline; }
-
-    /* ĮVESTIES LAUKELIAI (TICKERIS IR API RAKTAS) */
-    [data-testid="stTextInput"] [data-testid="stTextInputRootElement"],
-    [data-testid="stTextInput"] div[data-baseweb="input"] {
-        background-color: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important;
-        border-radius: 8px !important;
-        overflow: hidden !important;
+    [data-testid="stSidebar"] {
+        background-color: #F8FAFC !important;
+        border-right: 1px solid #E2E8F0 !important;
     }
     [data-testid="stTextInput"] [data-testid="stTextInputRootElement"]:focus-within,
     [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {
@@ -119,11 +114,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("📊 Akcijų Analizės Agentas")
-
 # ------------------------------------------------------------------------------
 # 2. ŠONINĖ JUOSTA
 # ------------------------------------------------------------------------------
+st.sidebar.markdown(
+    '<div class="sidebar-app-title">🤖 Akcijų analizės agentas</div>',
+    unsafe_allow_html=True,
+)
+
 st.sidebar.header("⚙️ Parametrai")
 
 tickers_raw = st.sidebar.text_input(
@@ -735,12 +733,12 @@ if ticker_input:
 
             extended_label, extended_price, extended_delta = None, None, None
             if post_price is not None and not pd.isna(post_price):
-                extended_label = "After Hours"
+                extended_label = "Po rinkos uždarymo"
                 extended_price = post_price
                 if post_change is not None and post_change_pct is not None:
                     extended_delta = f"{post_change:+.2f} ({post_change_pct:+.2f}%)"
             elif pre_price is not None and not pd.isna(pre_price):
-                extended_label = "Before Hours (Pre-Market)"
+                extended_label = "Prieš rinkos sesiją"
                 extended_price = pre_price
                 if pre_change is not None and pre_change_pct is not None:
                     extended_delta = f"{pre_change:+.2f} ({pre_change_pct:+.2f}%)"
@@ -993,7 +991,7 @@ if ticker_input:
             st.divider()
 
             # 4 SEKCIJA: REVENUES, NET INCOME
-            st.subheader("📊 REVENUES, NET INCOME")
+            st.subheader("📊 PAJAMOS, GRYNASIS PELNAS")
             has_annual_fin = bool(
                 financials_years and revenues_vals and net_income_vals
             )
@@ -1080,7 +1078,7 @@ if ticker_input:
             st.divider()
 
             # 5 SEKCIJA: INSIDER PREKYBA
-            st.subheader("👥 INSIDER PREKYBA (paskutiniai 12 mėn.)")
+            st.subheader("👥 VIDAUS SANDORIAI (paskutiniai 12 mėn.)")
             c1, c2, c3 = st.columns(3)
             c1.metric("Iš viso pirkta", format_number(total_buy, currency=cur))
             c2.metric(
@@ -1390,10 +1388,10 @@ if ticker_input:
             - Dividend Yield: {div_yield_val}%
 
             DIVIDENDŲ DUOMENYS (iš Yahoo Finance, jei įmonė moka dividendus):
-            - Paskutinio dividendo suma: {info.get('lastDividendValue', 'N/A')}
-            - Paskutinio dividendo data: {fmt_unix_date(info.get('lastDividendDate'))}
+            - Paskutinių dividendų suma: {info.get('lastDividendValue', 'N/A')}
+            - Paskutinių dividendų data: {fmt_unix_date(info.get('lastDividendDate'))}
             - Ex-dividend data (paskutinė žinoma): {fmt_unix_date(info.get('exDividendDate'))}
-            - Metinė dividendo norma: {info.get('dividendRate', 'N/A')}
+            - Metinė dividendų norma: {info.get('dividendRate', 'N/A')}
             - Payout ratio: {info.get('payoutRatio', 'N/A')}
             (Pastaba: šios datos yra PASKUTINĖS ŽINOMOS iš Yahoo Finance, o ne būtinai
             būsimo mokėjimo grafikas - tai nurodyk atsakyme, jei aktualu.)
@@ -1435,41 +1433,44 @@ if ticker_input:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            if user_query := st.text_input(
-                    f"Paklausk ko nors apie {ticker_input}...",
-                    key=f"chat_input_{ticker_input}",
-            ):
+            # Konteineris, į kurį nauji klausimai ir atsakymai įdedami virš formos
+            chat_container = st.container()
+
+            with st.form(key=f"chat_form_{ticker_input}", clear_on_submit=True):
+                user_query = st.text_input(
+                    f"Paklausk ko nors apie {ticker_input}..."
+                )
+                send = st.form_submit_button("Siųsti")
+
+            if send and user_query.strip():
                 st.session_state[chat_key].append(
                     {"role": "user", "content": user_query}
                 )
-                with st.chat_message("user"):
-                    st.markdown(user_query)
 
-                with st.chat_message("assistant"):
-                    with st.spinner("Ieškoma informacijos..."):
-                        chat_system_prompt = (
-                            "Tu esi patyręs finansų analitikas ir bendro pobūdžio AI asistentas, "
-                            "kalbantis lietuviškai. Atsakinėk į BET KOKIUS vartotojo klausimus - "
-                            "tiek apie šią konkrečią akciją, tiek bendro pobūdžio finansų, "
-                            "investavimo ar kitas temas - naudodamasis savo bendrosiomis žiniomis, "
-                            "lygiai kaip įprastas pokalbių asistentas (pvz. ChatGPT ar Gemini).\n\n"
-                            f"Apie šią konkrečią akciją turi šiuos šviežius duomenis iš Yahoo Finance:\n"
-                            f"{context_summary}\n\n"
-                            "Kai klausimas susijęs su šia akcija - PIRMIAUSIA naudok aukščiau "
-                            "pateiktus duomenis. Jei jų trūksta konkrečiam faktui (pvz. tikslios "
-                            "būsimos datos), papildyk atsakymą savo bendrosiomis žiniomis, bet aiškiai "
-                            "nurodyk, kad tai bendra informacija, o ne patvirtintas Yahoo Finance faktas. "
-                            "Kai klausimas nesusijęs su šia akcija - atsakyk laisvai, kaip į bet kokį "
-                            "kitą klausimą, remdamasis savo žiniomis. Neatsisakyk atsakyti vien todėl, "
-                            "kad tikslaus fakto nėra pateiktuose duomenyse - pasakyk, ką žinai, ir "
-                            "pažymėk, kur reikėtų patikrinti naujausią informaciją (pvz. jei tavo "
-                            "žinios gali būti pasenusios)."
-                        )
-                        full_res = query_ai(user_query, chat_system_prompt)
-                        st.markdown(full_res)
-                        st.session_state[chat_key].append(
-                            {"role": "assistant", "content": full_res}
-                        )
+                chat_system_prompt = (
+                    "Tu esi patyręs finansų analitikas ir bendro pobūdžio AI asistentas, "
+                    "kalbantis lietuviškai. Atsakinėk į BET KOKIUS vartotojo klausimus: "
+                    "apie šią konkrečią akciją, finansus, investavimą ar kitas temas.\n\n"
+                    f"Apie šią akciją turi šiuos duomenis iš Yahoo Finance:\n"
+                    f"{context_summary}\n\n"
+                    "Jei klausimas susijęs su šia akcija, pirmiausia naudok pateiktus "
+                    "duomenis. Jei konkretaus fakto juose nėra, pasakyk, kad tai yra "
+                    "bendro pobūdžio informacija ir gali reikėti patikrinti naujausius duomenis."
+                )
+
+                with chat_container:
+                    with st.chat_message("user"):
+                        st.markdown(user_query)
+
+                    with st.chat_message("assistant"):
+                        with st.spinner("Ieškoma informacijos..."):
+                            full_res = query_ai(user_query, chat_system_prompt)
+                            st.markdown(full_res)
+
+                st.session_state[chat_key].append(
+                    {"role": "assistant", "content": full_res}
+                )
+                st.rerun()
 
         except Exception as e:
             st.error(f"Klaida apdorojant duomenis: {e}")
