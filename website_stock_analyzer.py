@@ -4,11 +4,13 @@ import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
+import time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 import streamlit as st
 import yfinance as yf
+
 
 # ------------------------------------------------------------------------------
 # 1. PUSLAPIO KONFIGŪRACIJA IR TEMA
@@ -576,29 +578,86 @@ def validate_ticker(ticker: str) -> bool:
         return False
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def validate_ticker(ticker: str) -> bool:
+    for attempt in range(3):
+        try:
+            t = yf.Ticker(ticker)
+            if t.fast_info.get("lastPrice") is not None:
+                return True
+            h = t.history(period="1d")
+            return not h.empty
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+            else:
+                return False
+    return False
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_info(ticker: str):
-    return yf.Ticker(ticker).info or {}
+    for attempt in range(3):
+        try:
+            return yf.Ticker(ticker).info or {}
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+            else:
+                return {}
+    return {}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_history(ticker: str, period: str):
-    return yf.Ticker(ticker).history(period=period)
+    for attempt in range(3):
+        try:
+            return yf.Ticker(ticker).history(period=period)
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+            else:
+                return pd.DataFrame()
+    return pd.DataFrame()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_income_stmt(ticker: str):
-    return yf.Ticker(ticker).income_stmt
+    for attempt in range(3):
+        try:
+            return yf.Ticker(ticker).income_stmt
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+            else:
+                return None
+    return None
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_quarterly_income_stmt(ticker: str):
-    return yf.Ticker(ticker).quarterly_income_stmt
+    for attempt in range(3):
+        try:
+            return yf.Ticker(ticker).quarterly_income_stmt
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+            else:
+                return None
+    return None
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_insider_transactions(ticker: str):
-    return yf.Ticker(ticker).insider_transactions
+    for attempt in range(3):
+        try:
+            return yf.Ticker(ticker).insider_transactions
+        except Exception:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+            else:
+                return None
+    return None
 
 
 # ------------------------------------------------------------------------------
