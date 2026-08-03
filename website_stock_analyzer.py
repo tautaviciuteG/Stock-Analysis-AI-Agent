@@ -12,6 +12,16 @@ import streamlit as st
 import yfinance as yf
 
 
+# Paslėpti Streamlit viršutinę juostą ir apatinį puslapio dėklą
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # ------------------------------------------------------------------------------
 # 1. PUSLAPIO KONFIGŪRACIJA IR TEMA
 # ------------------------------------------------------------------------------
