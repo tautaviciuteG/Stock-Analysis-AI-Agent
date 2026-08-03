@@ -23,42 +23,73 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-    /* Jūsų jau esamas kodas */
+    /* Bendras puslapio ir šoninės juostos fonas */
     .stApp { background-color: #FFFFFF !important; color: #0F172A !important; }
     [data-testid="stSidebar"] { background-color: #F8FAFC !important; border-right: 1px solid #E2E8F0 !important; }
+
+    /* Teksto ir antraščių spalvos */
     p, span, label, [data-testid="stWidgetLabel"] p { color: #0F172A !important; }
     label, [data-testid="stWidgetLabel"] { font-weight: 600 !important; margin-bottom: 4px !important; }
     [data-testid="stMetricValue"] { font-size: 1.4rem !important; font-weight: 700 !important; color: #0F172A !important; }
     [data-testid="stMetricLabel"] p { color: #475569 !important; }
     h1, h2, h3, h4, h5, h6 { color: #0F172A !important; font-weight: 700 !important; }
-    .stTextInput input { background-color: #FFFFFF !important; color: #0F172A !important; border: 1.5px solid #0F172A !important; border-radius: 10px !important; }
-    div.stDownloadButton > button { background-color: #F1F5F9 !important; color: #0F172A !important; border: 1px solid #E2E8F0 !important; border-radius: 12px !important; font-weight: 600 !important; width: 100% !important; padding: 0.5rem 1rem !important; }
-    div.stDownloadButton > button:hover { background-color: #E2E8F0 !important; border-color: #CBD5E1 !important; }
 
-    /* NAUJA: Standartinių mygtukų (pvz., AI analizės) stilius */
-    div.stButton > button {
-        background-color: #F1F5F9 !important; /* Šviesiai pilkas fonas */
-        color: #0F172A !important; /* Tamsus tekstas */
-        border: 1px solid #CBD5E1 !important;
-        border-radius: 10px !important;
+    /* 1. SLAPTAŽODŽIO (API RAKTO) LAUKELIS IR AKIES MYGTUKAS */
+    [data-testid="stTextInput"] div[data-baseweb="input"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #0F172A !important;
+        border-radius: 8px !important;
+        overflow: hidden !important; /* Užtikrina, kad mygtukas neišliptų iš rėmelio */
     }
-    div.stButton > button:hover {
-        background-color: #E2E8F0 !important; /* Tamsesnis pilkas užvedus pelę */
-        border-color: #94A3B8 !important;
+    [data-testid="stTextInput"] input {
+        background-color: #FFFFFF !important;
         color: #0F172A !important;
     }
+    [data-testid="stTextInput"] button {
+        background-color: #F8FAFC !important; /* Šviesiai pilkas akies fonas */
+        border-left: 1px solid #E2E8F0 !important; /* Plonytė atskyrimo linija */
+    }
+    [data-testid="stTextInput"] svg {
+        fill: #0F172A !important; /* Tamsi akies ikona */
+    }
 
-    /* NAUJA: Pokalbio (Chat) užklausos langelio stilius */
-    [data-testid="stChatInput"] {
-        background-color: #F1F5F9 !important; /* Pilkas fonas užklausos konteineriui */
+    /* 2. MYGTUKAI (AI Analizė ir kiti) */
+    div.stButton > button {
+        background-color: #F4F6F8 !important;
+        color: #0F172A !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+    div.stButton > button:hover {
+        background-color: #E2E8F0 !important;
         border-color: #CBD5E1 !important;
     }
-    [data-testid="stChatInput"] textarea {
-        background-color: #F1F5F9 !important; /* Pilkas fonas pačiam įvesties laukui */
-        color: #0F172A !important; /* Tamsus tekstas */
+
+    /* 3. CHAT UŽKLAUSOS LANGELIS IR JO TĖVINIS FONAS */
+    /* Panaikina juodą juostą ekrano apačioje */
+    [data-testid="stBottom"], 
+    [data-testid="stBottomBlockContainer"] {
+        background-color: #FFFFFF !important; 
     }
+    /* Pats įvesties laukelis (vientisai pilkas, kaip jūsų nuotraukoje) */
+    [data-testid="stChatInput"] {
+        background-color: #F4F6F8 !important;
+        border: none !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stChatInput"] textarea {
+        background-color: transparent !important;
+        color: #0F172A !important;
+    }
+    /* Siuntimo mygtukas (rodyklė) */
     [data-testid="stChatInput"] button {
-        color: #0F172A !important; /* Siuntimo mygtuko spalva */
+        background-color: #E2E8F0 !important; /* Šiek tiek tamsesnis pilkas siuntimo mygtukui */
+        border-radius: 6px !important;
+        color: #0F172A !important;
+    }
+    [data-testid="stChatInput"] svg {
+        fill: #0F172A !important; /* Tamsi rodyklės ikona */
     }
 </style>
 """,
