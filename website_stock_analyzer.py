@@ -10,6 +10,8 @@ import requests
 import streamlit as st
 import yfinance as yf
 
+
+
 # ------------------------------------------------------------------------------
 # 1. PUSLAPIO KONFIGŪRACIJA IR TEMA
 # ------------------------------------------------------------------------------
@@ -35,38 +37,31 @@ st.components.v1.html(
 st.markdown(
     """
 <style>
-    /* Bendras puslapio ir šoninės juostos fonas */
     .stApp { background-color: #FFFFFF !important; color: #0F172A !important; }
     [data-testid="stSidebar"] { background-color: #F8FAFC !important; border-right: 1px solid #E2E8F0 !important; }
 
-    /* Tekstai ir antraštės */
     p, span, label, [data-testid="stWidgetLabel"] p { color: #0F172A !important; }
     label, [data-testid="stWidgetLabel"] { font-weight: 600 !important; margin-bottom: 4px !important; }
     [data-testid="stMetricValue"] { font-size: 1.4rem !important; font-weight: 700 !important; color: #0F172A !important; }
     [data-testid="stMetricLabel"] p { color: #475569 !important; }
     h1, h2, h3, h4, h5, h6 { color: #0F172A !important; font-weight: 700 !important; }
 
-    /* ĮVESTIES LAUKELIAI (TICKERIS IR API RAKTAS) - APIBRAUKIMAS */
+    /* ĮVESTIES LAUKELIAI (TICKERIS IR API RAKTAS) */
     [data-testid="stTextInput"] [data-testid="stTextInputRootElement"],
     [data-testid="stTextInput"] div[data-baseweb="input"] {
         background-color: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important; /* Rėmelio spalva */
+        border: 1px solid #CBD5E1 !important;
         border-radius: 8px !important;
         overflow: hidden !important;
     }
-
-    /* Aktyvaus (paspausto) laukelio rėmelis */
     [data-testid="stTextInput"] [data-testid="stTextInputRootElement"]:focus-within,
     [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {
         border-color: #0F172A !important;
     }
-
     [data-testid="stTextInput"] input {
         background-color: transparent !important;
         color: #0F172A !important;
     }
-
-    /* AKIES MYGTUKAS DEŠINĖJE */
     [data-testid="stTextInput"] button {
         background-color: #F1F5F9 !important;
         border: none !important;
@@ -74,16 +69,14 @@ st.markdown(
         border-radius: 0 !important;
         height: 100% !important;
     }
-
     [data-testid="stTextInput"] button * {
         background-color: transparent !important;
     }
-
     [data-testid="stTextInput"] svg {
         fill: #0F172A !important;
     }
 
-    /* MYGTUKAI IR CHAT LAUKAS */
+    /* PAPRASTI MYGTUKAI */
     div.stButton > button {
         background-color: #F4F6F8 !important;
         color: #0F172A !important;
@@ -96,27 +89,38 @@ st.markdown(
         border-color: #CBD5E1 !important;
     }
 
+    /* CHAT INPUT APARTMENT (APAČIOS LANKELIO PILKAS FONAS IR TEKSTAS) */
     [data-testid="stBottom"], 
     [data-testid="stBottomBlockContainer"] {
         background-color: #FFFFFF !important; 
     }
-    [data-testid="stChatInput"],
-    [data-testid="stChatInput"] [data-baseweb="base-input"] {
+
+    [data-testid="stChatInput"] {
+        background-color: transparent !important;
+    }
+
+    [data-testid="stChatInput"] > div,
+    [data-testid="stChatInput"] [data-baseweb="base-input"],
+    [data-testid="stChatInput"] div[data-baseweb="input"] {
         background-color: #F1F5F9 !important;
-        border: 1px solid #CBD5E1 !important;
+        border: 1px solid #0F172A !important;
         border-radius: 8px !important;
     }
+
     [data-testid="stChatInput"] textarea {
         background-color: transparent !important;
         color: #0F172A !important;
     }
+
     [data-testid="stChatInput"] textarea::placeholder {
         color: #64748B !important;
     }
+
     [data-testid="stChatInput"] button {
         background-color: #E2E8F0 !important;
         border-radius: 6px !important;
     }
+
     [data-testid="stChatInput"] svg {
         fill: #0F172A !important;
     }
