@@ -23,91 +23,160 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-    .stApp { background-color: #FFFFFF !important; color: #0F172A !important; }
+    :root {
+        --tekstas: #0F172A;
+        --pilka: #64748B;
+        --linija: #E2E8F0;
+        --sonine: #F8FAFC;
+        --sviesiai-pilka: #F1F5F9;
+    }
 
-    .sidebar-app-title {
-        color: #0F172A;
-        font-size: 1.25rem;
-        font-weight: 700;
-        line-height: 1.2;
-        margin: 0 0 10px 0;
-        padding: 0 0 8px 0;
-        border-bottom: 1px solid #CBD5E1;
+    .stApp {
+        background: #FFFFFF !important;
+        color: var(--tekstas) !important;
     }
 
     [data-testid="stSidebar"] {
-        background-color: #F8FAFC !important;
-        border-right: 1px solid #E2E8F0 !important;
+        min-width: 310px !important;
+        max-width: 310px !important;
+        background: var(--sonine) !important;
+        border-right: 1px solid var(--linija) !important;
     }
+
+    [data-testid="stSidebarContent"] {
+        padding: 1.5rem 1.35rem 2rem !important;
+    }
+
+    [data-testid="stMainBlockContainer"] {
+        max-width: 1120px !important;
+        padding: 2.5rem 2.75rem 4rem !important;
+    }
+
+    .sidebar-app-title {
+        color: var(--tekstas);
+        font-size: 1.1rem;
+        font-weight: 750;
+        line-height: 1.2;
+        margin: 0 0 1rem;
+        padding: 0 0 0.65rem;
+        border-bottom: 1px solid #CBD5E1;
+    }
+
+    p, span, label, li, [data-testid="stWidgetLabel"] p {
+        color: var(--tekstas) !important;
+    }
+
+    [data-testid="stWidgetLabel"] p,
+    label {
+        font-size: 0.86rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 0.3rem !important;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        color: var(--tekstas) !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em;
+    }
+
+    h2 {
+        font-size: 1.45rem !important;
+        margin-top: 1.9rem !important;
+    }
+
+    h3 {
+        font-size: 1.3rem !important;
+    }
+
+    [data-testid="stSidebar"] h2 {
+        font-size: 1.08rem !important;
+        margin: 1.3rem 0 0.75rem !important;
+    }
+
+    a, a span {
+        color: #2563EB !important;
+        text-decoration: underline;
+    }
+
+    hr {
+        border-color: var(--linija) !important;
+        margin: 2.1rem 0 !important;
+    }
+
+    [data-testid="stTextInput"] [data-testid="stTextInputRootElement"],
+    [data-testid="stTextInput"] div[data-baseweb="input"] {
+        background: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 9px !important;
+        overflow: hidden !important;
+        box-shadow: none !important;
+    }
+
     [data-testid="stTextInput"] [data-testid="stTextInputRootElement"]:focus-within,
     [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within {
-        border-color: #0F172A !important;
+        border-color: #334155 !important;
+        box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2) !important;
     }
+
     [data-testid="stTextInput"] input {
-        background-color: transparent !important;
-        color: #0F172A !important;
+        background: transparent !important;
+        color: var(--tekstas) !important;
     }
+
     [data-testid="stTextInput"] button {
-        background-color: #F1F5F9 !important;
+        background: var(--sviesiai-pilka) !important;
         border: none !important;
         border-left: 1px solid #CBD5E1 !important;
         border-radius: 0 !important;
         height: 100% !important;
     }
-    [data-testid="stTextInput"] button * {
-        background-color: transparent !important;
-    }
+
     [data-testid="stTextInput"] svg {
-        fill: #0F172A !important;
+        fill: var(--tekstas) !important;
     }
 
-    /* PAPRASTI MYGTUKAI */
-    div.stButton > button {
-        background-color: #F4F6F8 !important;
-        color: #0F172A !important;
-        border: 1px solid #E2E8F0 !important;
+    div.stButton > button,
+    [data-testid="stFormSubmitButton"] > button {
+        min-height: 2.45rem;
+        background: #F8FAFC !important;
+        color: var(--tekstas) !important;
+        border: 1px solid #CBD5E1 !important;
         border-radius: 8px !important;
         font-weight: 600 !important;
-    }
-    div.stButton > button:hover {
-        background-color: #E2E8F0 !important;
-        border-color: #CBD5E1 !important;
+        box-shadow: none !important;
     }
 
-    /* CHAT INPUT APARTMENT */
-    [data-testid="stBottom"], 
-    [data-testid="stBottomBlockContainer"] {
-        background-color: #FFFFFF !important; 
+    div.stButton > button:hover,
+    [data-testid="stFormSubmitButton"] > button:hover {
+        background: #E2E8F0 !important;
+        border-color: #94A3B8 !important;
     }
 
-    [data-testid="stChatInput"] {
-        background-color: transparent !important;
+    [data-testid="stMetricValue"] {
+        font-size: 1.85rem !important;
+        font-weight: 500 !important;
+        color: #292C38 !important;
     }
 
-    [data-testid="stChatInput"] > div,
-    [data-testid="stChatInput"] [data-baseweb="base-input"],
-    [data-testid="stChatInput"] div[data-baseweb="input"] {
-        background-color: #F1F5F9 !important;
-        border: 1px solid #0F172A !important;
-        border-radius: 8px !important;
+    [data-testid="stMetricLabel"] p {
+        color: #475569 !important;
     }
 
-    [data-testid="stChatInput"] textarea {
-        background-color: transparent !important;
-        color: #0F172A !important;
+    [data-testid="stMetricDelta"] {
+        font-size: 0.8rem !important;
     }
 
-    [data-testid="stChatInput"] textarea::placeholder {
-        color: #64748B !important;
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--linija);
+        border-radius: 8px;
+        overflow: hidden;
     }
 
-    [data-testid="stChatInput"] button {
-        background-color: #E2E8F0 !important;
-        border-radius: 6px !important;
-    }
-
-    [data-testid="stChatInput"] svg {
-        fill: #0F172A !important;
+    [data-testid="stForm"] {
+        border: 1px solid #D8E0EA !important;
+        border-radius: 10px !important;
+        background: #FFFFFF !important;
+        padding: 1rem !important;
     }
 </style>
 """,
