@@ -20,40 +20,55 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.components.v1.html(
+    """
+    <script>
+        var main = window.parent.document.querySelector('section.main');
+        if (main) {
+            main.scrollTop = 0;
+        }
+    </script>
+    """,
+    height=0,
+)
+
 st.markdown(
     """
 <style>
-    /* Bendras puslapio ir šoninės juostos fonas */
     .stApp { background-color: #FFFFFF !important; color: #0F172A !important; }
     [data-testid="stSidebar"] { background-color: #F8FAFC !important; border-right: 1px solid #E2E8F0 !important; }
 
-    /* Teksto ir antraščių spalvos */
     p, span, label, [data-testid="stWidgetLabel"] p { color: #0F172A !important; }
     label, [data-testid="stWidgetLabel"] { font-weight: 600 !important; margin-bottom: 4px !important; }
     [data-testid="stMetricValue"] { font-size: 1.4rem !important; font-weight: 700 !important; color: #0F172A !important; }
     [data-testid="stMetricLabel"] p { color: #475569 !important; }
     h1, h2, h3, h4, h5, h6 { color: #0F172A !important; font-weight: 700 !important; }
 
-    /* 1. SLAPTAŽODŽIO (API RAKTO) LAUKELIS IR AKIES MYGTUKAS */
     [data-testid="stTextInput"] div[data-baseweb="input"] {
         background-color: #FFFFFF !important;
         border: 1px solid #0F172A !important;
         border-radius: 8px !important;
-        overflow: hidden !important; /* Užtikrina, kad mygtukas neišliptų iš rėmelio */
+        overflow: hidden !important;
     }
     [data-testid="stTextInput"] input {
-        background-color: #FFFFFF !important;
+        background-color: transparent !important;
         color: #0F172A !important;
     }
+    [data-testid="stTextInput"] div[data-baseweb="input"] > div {
+        background-color: transparent !important;
+    }
     [data-testid="stTextInput"] button {
-        background-color: #F8FAFC !important; /* Šviesiai pilkas akies fonas */
-        border-left: 1px solid #E2E8F0 !important; /* Plonytė atskyrimo linija */
+        background-color: #E2E8F0 !important;
+        border-left: 1px solid #CBD5E1 !important;
+        height: 100% !important;
+    }
+    [data-testid="stTextInput"] button * {
+        background-color: transparent !important;
     }
     [data-testid="stTextInput"] svg {
-        fill: #0F172A !important; /* Tamsi akies ikona */
+        fill: #0F172A !important;
     }
 
-    /* 2. MYGTUKAI (AI Analizė ir kiti) */
     div.stButton > button {
         background-color: #F4F6F8 !important;
         color: #0F172A !important;
@@ -66,13 +81,10 @@ st.markdown(
         border-color: #CBD5E1 !important;
     }
 
-    /* 3. CHAT UŽKLAUSOS LANGELIS IR JO TĖVINIS FONAS */
-    /* Panaikina juodą juostą ekrano apačioje */
     [data-testid="stBottom"], 
     [data-testid="stBottomBlockContainer"] {
         background-color: #FFFFFF !important; 
     }
-    /* Pats įvesties laukelis (vientisai pilkas, kaip jūsų nuotraukoje) */
     [data-testid="stChatInput"] {
         background-color: #F4F6F8 !important;
         border: none !important;
@@ -82,14 +94,13 @@ st.markdown(
         background-color: transparent !important;
         color: #0F172A !important;
     }
-    /* Siuntimo mygtukas (rodyklė) */
     [data-testid="stChatInput"] button {
-        background-color: #E2E8F0 !important; /* Šiek tiek tamsesnis pilkas siuntimo mygtukui */
+        background-color: #E2E8F0 !important;
         border-radius: 6px !important;
         color: #0F172A !important;
     }
     [data-testid="stChatInput"] svg {
-        fill: #0F172A !important; /* Tamsi rodyklės ikona */
+        fill: #0F172A !important;
     }
 </style>
 """,
