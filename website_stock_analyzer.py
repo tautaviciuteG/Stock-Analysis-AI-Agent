@@ -23,6 +23,7 @@ st.set_page_config(
 st.markdown(
     """
 <style>
+    /* Jūsų jau esamas kodas */
     .stApp { background-color: #FFFFFF !important; color: #0F172A !important; }
     [data-testid="stSidebar"] { background-color: #F8FAFC !important; border-right: 1px solid #E2E8F0 !important; }
     p, span, label, [data-testid="stWidgetLabel"] p { color: #0F172A !important; }
@@ -33,6 +34,32 @@ st.markdown(
     .stTextInput input { background-color: #FFFFFF !important; color: #0F172A !important; border: 1.5px solid #0F172A !important; border-radius: 10px !important; }
     div.stDownloadButton > button { background-color: #F1F5F9 !important; color: #0F172A !important; border: 1px solid #E2E8F0 !important; border-radius: 12px !important; font-weight: 600 !important; width: 100% !important; padding: 0.5rem 1rem !important; }
     div.stDownloadButton > button:hover { background-color: #E2E8F0 !important; border-color: #CBD5E1 !important; }
+
+    /* NAUJA: Standartinių mygtukų (pvz., AI analizės) stilius */
+    div.stButton > button {
+        background-color: #F1F5F9 !important; /* Šviesiai pilkas fonas */
+        color: #0F172A !important; /* Tamsus tekstas */
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+    }
+    div.stButton > button:hover {
+        background-color: #E2E8F0 !important; /* Tamsesnis pilkas užvedus pelę */
+        border-color: #94A3B8 !important;
+        color: #0F172A !important;
+    }
+
+    /* NAUJA: Pokalbio (Chat) užklausos langelio stilius */
+    [data-testid="stChatInput"] {
+        background-color: #F1F5F9 !important; /* Pilkas fonas užklausos konteineriui */
+        border-color: #CBD5E1 !important;
+    }
+    [data-testid="stChatInput"] textarea {
+        background-color: #F1F5F9 !important; /* Pilkas fonas pačiam įvesties laukui */
+        color: #0F172A !important; /* Tamsus tekstas */
+    }
+    [data-testid="stChatInput"] button {
+        color: #0F172A !important; /* Siuntimo mygtuko spalva */
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -1286,7 +1313,6 @@ if ticker_input:
 
             # 7 SEKCIJA: AI AGENTO ANALIZĖ IR CHAT
             st.subheader("🤖 AI AGENTO ANALIZĖ IR CHAT")
-            st.caption(f"Naudojamas modelis: `{SELECTED_MODEL}` (Mistral AI)")
 
             context_summary = f"""
             ĮMONĖ: {long_name} ({ticker_input})
