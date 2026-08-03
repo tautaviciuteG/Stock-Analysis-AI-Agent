@@ -40,11 +40,15 @@ st.markdown(
     .stApp { background-color: #FFFFFF !important; color: #0F172A !important; }
     [data-testid="stSidebar"] { background-color: #F8FAFC !important; border-right: 1px solid #E2E8F0 !important; }
 
-    p, span, label, [data-testid="stWidgetLabel"] p { color: #0F172A !important; }
+    /* Visi pagrindiniai tekstai, paragrafai ir sąrašai */
+    p, span, label, li, [data-testid="stWidgetLabel"] p { color: #0F172A !important; }
     label, [data-testid="stWidgetLabel"] { font-weight: 600 !important; margin-bottom: 4px !important; }
     [data-testid="stMetricValue"] { font-size: 1.4rem !important; font-weight: 700 !important; color: #0F172A !important; }
     [data-testid="stMetricLabel"] p { color: #475569 !important; }
     h1, h2, h3, h4, h5, h6 { color: #0F172A !important; font-weight: 700 !important; }
+
+    /* Nuorodos tekstas (kad išliktų mėlynos ir pastebimos) */
+    a, a span { color: #2563EB !important; text-decoration: underline; }
 
     /* ĮVESTIES LAUKELIAI (TICKERIS IR API RAKTAS) */
     [data-testid="stTextInput"] [data-testid="stTextInputRootElement"],
@@ -89,7 +93,7 @@ st.markdown(
         border-color: #CBD5E1 !important;
     }
 
-    /* CHAT INPUT APARTMENT (APAČIOS LANKELIO PILKAS FONAS IR TEKSTAS) */
+    /* CHAT INPUT APARTMENT */
     [data-testid="stBottom"], 
     [data-testid="stBottomBlockContainer"] {
         background-color: #FFFFFF !important; 
