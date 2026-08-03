@@ -1474,4 +1474,3 @@ if ticker_input:
 
         except Exception as e:
             st.error(f"Klaida apdorojant duomenis: {e}")
-
