@@ -10,8 +10,6 @@ import requests
 import streamlit as st
 import yfinance as yf
 
-
-
 # ------------------------------------------------------------------------------
 # 1. PUSLAPIO KONFIGŪRACIJA IR TEMA
 # ------------------------------------------------------------------------------
@@ -20,18 +18,6 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
-)
-
-st.components.v1.html(
-    """
-    <script>
-        var main = window.parent.document.querySelector('section.main');
-        if (main) {
-            main.scrollTop = 0;
-        }
-    </script>
-    """,
-    height=0,
 )
 
 st.markdown(
@@ -767,6 +753,13 @@ if ticker_input:
 
             with header_col1:
                 st.subheader(f"{long_name} ({ticker_input})")
+
+                description = info.get("longBusinessSummary", "")
+                if description:
+                    short_description = ". ".join(description.split(". ")[:2]).strip()
+                    if not short_description.endswith("."):
+                        short_description += "."
+                    st.caption(short_description)
             with header_col2:
                 st.metric(
                     label=f"Kaina ({cur})",
@@ -1442,8 +1435,9 @@ if ticker_input:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            if user_query := st.chat_input(
-                    f"Paklausk ko nors apie {ticker_input}..."
+            if user_query := st.text_input(
+                    f"Paklausk ko nors apie {ticker_input}...",
+                    key=f"chat_input_{ticker_input}",
             ):
                 st.session_state[chat_key].append(
                     {"role": "user", "content": user_query}
