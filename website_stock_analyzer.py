@@ -231,7 +231,7 @@ st.sidebar.header("🤖 AI Agentas (Mistral AI)")
 api_key = st.sidebar.text_input("Įveskite Mistral API Raktą", type="password")
 
 # Užfiksuotas vienintelis modelis (be galimybės keisti sąsajoje)
-SELECTED_MODEL = "mistral-small-latest"
+SELECTED_MODEL = "mistral-large-latest"
 
 st.sidebar.markdown(
     """
@@ -1529,21 +1529,26 @@ if ticker_input:
                 ):
                     with st.spinner("Mistral AI analizuoja duomenis..."):
                         system_prompt = (
-                            "Tu esi patyręs finansų analitikas, kalbantis lietuviškai. "
-                            "Atsakinėk TRUMPAI IR KONKREČIAI - be įžangų, be pasikartojimų, "
-                            "be nereikalingo vandens. Naudok trumpus punktus (bullet points), "
-                            "ne ilgas pastraipas.\n\n"
-                            "Analizuok pateiktus duomenis griežtai šiuo formatu:\n"
-                            "**Stiprybės:** (maks. 3 punktai, po 1 trumpą sakinį)\n"
-                            "**Rizikos:** (maks. 3 punktai, po 1 trumpą sakinį)\n"
-                            "**Apibendrinimas:** (1-2 sakiniai)\n\n"
-                            "Prireikus gali papildyti bendromis žiniomis apie sektorių ar "
-                            "pajamų segmentus/regionus, bet aiškiai pažymėk, kas yra tikslus "
-                            "duomuo, o kas - tavo bendra žinia. Viską laikyk kuo trumpiau."
+                            "Tu esi aukščiausio lygio finansų analitikas. Parengk išsamią, detalią ir konkrečią įmonės finansinę ataskaitą lietuviškai.\n\n"
+                            "Reikalavimai ataskaitai:\n"
+                            "1. Nesinaudok bendriniais teiginiais – remkis konkrečiais pateiktais skaičiais (kaina, P/E, CAGR augimu, skolos santykiu, ROE ir insider prekyba).\n"
+                            "2. Kiekvienai sekcijai pateik giluminį vertinimą ir argumentus.\n\n"
+                            "Naudok šią struktūrą:\n"
+                            "**1. Pagrindiniai Finansiniai Rodikliai ir Įvertinimas:** (analizuok Forward P/E, 3 m. pajamas/EPS augimą, ROE bendrame rinkos kontekste)\n"
+                            "**2. Finansinė Sveikata ir Skola:** (įvertink skolos ir nuosavo kapitalo santykį, pinigų srautus ir rizikas)\n"
+                            "**3. Dividendų Politika ir Atsipirkimas:** (išanalizuok dividendų pelningumą, ex-dividends datas, dividendų tvarumą)\n"
+                            "**4. Insider Sandorių Veiksmai:** (išanalizuok pirkimų/pardavimų srautus per 12 mėn. ir ką tai signalizuoja)\n"
+                            "**5. Pagrindinės Stiprybės ir Augimo Draiveriai:** (3-4 detalūs punktai su skaičiais)\n"
+                            "**6. Pagrindinės Rizikos ir Grėsmės:** (3-4 detalūs punktai su skaičiais)\n"
+                            "**7. Analitikų Rekomendacijos ir Tikslinė Kaina:** (lygink tikslinę kainą su dabartine)\n"
+                            "**8. Galutinis Apibendrinimas ir Verdiktas:** (išsamus 3-4 sakinių apibendrinimas)"
                         )
-                        user_prompt = f"Remdamasis šiais duomenimis, pateik trumpą įmonės apžvalgą:\n\n{context_summary}"
+                        user_prompt = (
+                            f"Atlik išsamią įmonės {long_name} ({ticker_input}) analizę ir parengk struktūrizuotą ataskaitą. "
+                            f"Konkrečiai įvertink pateiktus finansinius duomenis, sektoriaus tendencijas bei rizikas:\n\n{context_summary}"
+                        )
                         st.session_state[f"ai_summary_{ticker_input}"] = (
-                            query_ai(user_prompt, system_prompt, max_tokens=350)
+                            query_ai(user_prompt, system_prompt, max_tokens=1500)
                         )
 
             with col_ai2:
