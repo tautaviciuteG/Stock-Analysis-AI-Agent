@@ -11,7 +11,6 @@ import requests
 import streamlit as st
 import yfinance as yf
 
-
 # Paslėpti Streamlit viršutinę juostą ir apatinį puslapio dėklą
 hide_streamlit_style = """
     <style>
@@ -21,6 +20,7 @@ hide_streamlit_style = """
     </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 
 # ------------------------------------------------------------------------------
 # 1. PUSLAPIO KONFIGŪRACIJA IR TEMA
@@ -255,7 +255,7 @@ compare_tickers = tickers_list[1:] if len(tickers_list) > 1 else []
 # ------------------------------------------------------------------------------
 # PAGALBINĖS FUNKCIJOS
 # ------------------------------------------------------------------------------
-def query_ai(prompt: str, system_prompt: str = "") -> str:
+def query_ai(prompt: str, system_prompt: str = "", max_tokens: int = 300) -> str:
     """Išsiunčia užklausą į Mistral AI chat completions API.
 
     Naudoja pokalbio istoriją iš st.session_state, kad AI atsimintų ankstesnius
@@ -289,6 +289,8 @@ def query_ai(prompt: str, system_prompt: str = "") -> str:
     payload = {
         "model": SELECTED_MODEL,
         "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.3,
     }
 
     try:
@@ -489,6 +491,25 @@ def extract_financials_series(inc_df, label_func, max_cols=4):
     return labels, revenues, net_incomes
 
 
+def format_dividend_history(div_series, max_items=8):
+    """Formatuoja paskutinius yfinance Ticker.dividends įrašus į skaitomą tekstą.
+
+    Naudoja TIKRUS, iš Yahoo Finance ištrauktus mokėjimus - ne LLM spėjimus.
+    """
+    if div_series is None or div_series.empty:
+        return "Duomenų apie praeityje mokėtus dividendus nerasta."
+
+    recent = div_series.tail(max_items).sort_index(ascending=False)
+    lines = []
+    for date_idx, amount in recent.items():
+        try:
+            date_str = pd.to_datetime(date_idx).strftime("%Y-%m-%d")
+        except Exception:
+            date_str = str(date_idx)
+        lines.append(f"- {date_str}: {amount:.4f} (vienai akcijai)")
+    return "\n".join(lines)
+
+
 REC_MAP = {
     "strong_buy": "STRONG BUY",
     "buy": "BUY",
@@ -611,6 +632,12 @@ def fetch_quarterly_income_stmt(ticker: str):
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_insider_transactions(ticker: str):
     return yf.Ticker(ticker).insider_transactions
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_dividends_history(ticker: str):
+    """Traukia PILNĄ istorinį dividendų mokėjimų sąrašą (data + suma vienai akcijai)."""
+    return yf.Ticker(ticker).dividends
 
 
 # ------------------------------------------------------------------------------
@@ -792,6 +819,14 @@ if ticker_input:
                                 columns=["TxType", "RawValue", "Month"],
                                 errors="ignore",
                             )
+            except Exception:
+                pass
+
+            # Pilna istorinė dividendų mokėjimų eilutė (tikri duomenys iš Yahoo Finance)
+            dividends_history_text = "Duomenų apie praeityje mokėtus dividendus nerasta."
+            try:
+                div_series = fetch_dividends_history(ticker_input)
+                dividends_history_text = format_dividend_history(div_series, max_items=8)
             except Exception:
                 pass
 
@@ -1458,6 +1493,8 @@ if ticker_input:
             ĮMONĖ: {long_name} ({ticker_input})
             Dabartinė kaina: {price} {cur}
             Analitikų rekomendacija: {rec_lt}
+            Sektorius: {info.get('sector', 'N/A')}
+            Pramonės šaka: {info.get('industry', 'N/A')}
 
             RODIKLIAI:
             - Forward P/E: {info.get('forwardPE')}
@@ -1474,8 +1511,13 @@ if ticker_input:
             - Ex-dividend data (paskutinė žinoma): {fmt_unix_date(info.get('exDividendDate'))}
             - Metinė dividendų norma: {info.get('dividendRate', 'N/A')}
             - Payout ratio: {info.get('payoutRatio', 'N/A')}
-            (Pastaba: šios datos yra PASKUTINĖS ŽINOMOS iš Yahoo Finance, o ne būtinai
-            būsimo mokėjimo grafikas - tai nurodyk atsakyme, jei aktualu.)
+
+            TIKRA DIVIDENDŲ MOKĖJIMŲ ISTORIJA (paskutiniai iki 8 mokėjimai, TIKSLIOS datos iš Yahoo Finance):
+            {dividends_history_text}
+            (Pastaba: aukščiau esantis sąrašas yra TIKRI, patvirtinti praeities mokėjimai.
+            Būsimų mokėjimų datų Yahoo Finance negarantuoja - jei klausiama apie ateities
+            datą, remkis šiuo istoriniu grafiku kaip orientyru, bet nurodyk, kad tiksli
+            būsima data oficialiai dar nepaskelbta, jei jos nėra aukščiau.)
             """
 
             col_ai1, col_ai2 = st.columns([1, 2])
@@ -1488,14 +1530,20 @@ if ticker_input:
                     with st.spinner("Mistral AI analizuoja duomenis..."):
                         system_prompt = (
                             "Tu esi patyręs finansų analitikas, kalbantis lietuviškai. "
-                            "Analizuok pateiktus duomenis ir pateik stiprybes, rizikas bei "
-                            "apibendrinimą. Prireikus gali papildyti analizę savo bendrosiomis "
-                            "žiniomis apie įmonę ar sektorių, aiškiai atskirdamas, kas yra "
-                            "pateikti tikslūs duomenys, o kas - tavo bendra žinia."
+                            "Atsakinėk TRUMPAI IR KONKREČIAI - be įžangų, be pasikartojimų, "
+                            "be nereikalingo vandens. Naudok trumpus punktus (bullet points), "
+                            "ne ilgas pastraipas.\n\n"
+                            "Analizuok pateiktus duomenis griežtai šiuo formatu:\n"
+                            "**Stiprybės:** (maks. 3 punktai, po 1 trumpą sakinį)\n"
+                            "**Rizikos:** (maks. 3 punktai, po 1 trumpą sakinį)\n"
+                            "**Apibendrinimas:** (1-2 sakiniai)\n\n"
+                            "Prireikus gali papildyti bendromis žiniomis apie sektorių ar "
+                            "pajamų segmentus/regionus, bet aiškiai pažymėk, kas yra tikslus "
+                            "duomuo, o kas - tavo bendra žinia. Viską laikyk kuo trumpiau."
                         )
                         user_prompt = f"Remdamasis šiais duomenimis, pateik trumpą įmonės apžvalgą:\n\n{context_summary}"
                         st.session_state[f"ai_summary_{ticker_input}"] = (
-                            query_ai(user_prompt, system_prompt)
+                            query_ai(user_prompt, system_prompt, max_tokens=350)
                         )
 
             with col_ai2:
@@ -1532,11 +1580,20 @@ if ticker_input:
                     "Tu esi patyręs finansų analitikas ir bendro pobūdžio AI asistentas, "
                     "kalbantis lietuviškai. Atsakinėk į BET KOKIUS vartotojo klausimus: "
                     "apie šią konkrečią akciją, finansus, investavimą ar kitas temas.\n\n"
+                    "SVARBU - atsakymo stilius: būk KUO GLAUSTESNIS. Atsakyk tiesiai į "
+                    "klausimą, be įžangų ('Žinoma, štai...'), be pasikartojimų, be ilgų "
+                    "paaiškinimų, jei jų nereikalauja pats klausimas. Paprastam faktiniam "
+                    "klausimui (data, suma, taip/ne) - užtenka 1-2 sakinių. Sudėtingesniam "
+                    "klausimui naudok trumpus punktus, ne pastraipas. Nekartok klausimo "
+                    "savo atsakyme.\n\n"
                     f"Apie šią akciją turi šiuos duomenis iš Yahoo Finance:\n"
                     f"{context_summary}\n\n"
-                    "Jei klausimas susijęs su šia akcija, pirmiausia naudok pateiktus "
-                    "duomenis. Jei konkretaus fakto juose nėra, pasakyk, kad tai yra "
-                    "bendro pobūdžio informacija ir gali reikėti patikrinti naujausius duomenis."
+                    "Kai klausimas susijęs su šia akcija, PIRMIAUSIA naudok aukščiau pateiktus "
+                    "tikslius duomenis (ypač dividendų mokėjimų istoriją, kur datos TIKSLIOS). "
+                    "Jei klausiama apie ko nors, ko nėra pateiktuose duomenyse (pvz. pajamų "
+                    "suskirstymą pagal produktų segmentus ar geografinius regionus), atsakyk "
+                    "trumpai naudodamasis savo bendrosiomis žiniomis, bet aiškiai pažymėk, kad "
+                    "tai apytikslė informacija, o ne patvirtinti Yahoo Finance duomenys."
                 )
 
                 with chat_container:
@@ -1545,7 +1602,7 @@ if ticker_input:
 
                     with st.chat_message("assistant"):
                         with st.spinner("Ieškoma informacijos..."):
-                            full_res = query_ai(user_query, chat_system_prompt)
+                            full_res = query_ai(user_query, chat_system_prompt, max_tokens=220)
                             st.markdown(full_res)
 
                 st.session_state[chat_key].append(
@@ -1555,4 +1612,3 @@ if ticker_input:
 
         except Exception as e:
             st.error(f"Klaida apdorojant duomenis: {e}")
-
