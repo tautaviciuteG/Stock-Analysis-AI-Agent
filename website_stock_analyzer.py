@@ -1,10 +1,6 @@
-import datetime as dt
-from io import BytesIO
-import openpyxl
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
+
 import pandas as pd
-import time
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
@@ -339,6 +335,38 @@ def calc_cagr(start_val, end_val, periods=3):
         pass
     return None
 
+
+def calc_trend_growth(series):
+    try:
+        if series is None or series.empty:
+            return None
+
+        s = series.dropna()
+        if len(s) < 3:
+            return None
+
+        df_tmp = pd.DataFrame({"val": s})
+        df_tmp.index = pd.to_datetime(df_tmp.index)
+        df_tmp = df_tmp.sort_index(ascending=True)
+
+        vals = df_tmp["val"].tail(4).astype(float).values
+        if len(vals) < 3:
+            return None
+
+        yearly_changes = []
+        for i in range(1, len(vals)):
+            prev = vals[i - 1]
+            curr = vals[i]
+            if prev > 0:
+                chg = ((curr - prev) / prev) * 100
+                yearly_changes.append(chg)
+
+        if not yearly_changes:
+            return None
+
+        return float(np.mean(yearly_changes))
+    except Exception:
+        return None
 
 def format_number(val, is_currency=True, currency="USD"):
     if val is None or pd.isna(val):
@@ -692,11 +720,11 @@ if ticker_input:
                         col_latest, col_base = valid_cols[-1], valid_cols[-4]
                         for cand in ["Diluted EPS", "Basic EPS"]:
                             if cand in inc.index:
-                                eps_growth_3y = calc_cagr(
-                                    inc.loc[cand, col_base],
-                                    inc.loc[cand, col_latest],
-                                    3,
-                                )
+                                eps_growth_3y = calc_trend_growth(inc.loc[cand])
+                                break
+                        for cand in ["Total Revenue", "Operating Revenue"]:
+                            if cand in inc.index:
+                                sales_growth_3y = calc_trend_growth(inc.loc[cand])
                                 break
                         for cand in ["Total Revenue", "Operating Revenue"]:
                             if cand in inc.index:
@@ -1026,7 +1054,7 @@ if ticker_input:
                         if eps_growth_3y is not None
                         else "N/A"
                     ),
-                    "Šaltinis / pastaba": "Apskaičiuota CAGR",
+                    "Šaltinis / pastaba": "Metinis trendas",
                 },
                 {
                     "Rodiklis": "3-Year Sales Growth Rate",
@@ -1035,7 +1063,7 @@ if ticker_input:
                         if sales_growth_3y is not None
                         else "N/A"
                     ),
-                    "Šaltinis / pastaba": "Apskaičiuota CAGR",
+                    "Šaltinis / pastaba": "Metinis trendas",
                 },
                 {
                     "Rodiklis": "Cash",
