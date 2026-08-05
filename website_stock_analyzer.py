@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -326,6 +325,12 @@ def query_ai(prompt: str, system_prompt: str = "", max_tokens: int = 300) -> str
 
 
 def calc_cagr(start_val, end_val, periods=3):
+    """Skaičiuoja sudėtinį metinį augimo tempą (CAGR) nuo bazinės iki paskutinės reikšmės.
+
+    Grąžina None, jei bazinė arba paskutinė reikšmė yra <= 0, nes CAGR
+    matematiškai neapibrėžtas neigiamiems/nuliniams skaičiams (šaknies traukimas
+    iš neigiamo skaičiaus duotų klaidingą arba nerealų rezultatą).
+    """
     try:
         if start_val is not None and end_val is not None:
             start_val, end_val = float(start_val), float(end_val)
@@ -335,38 +340,6 @@ def calc_cagr(start_val, end_val, periods=3):
         pass
     return None
 
-
-def calc_trend_growth(series):
-    try:
-        if series is None or series.empty:
-            return None
-
-        s = series.dropna()
-        if len(s) < 3:
-            return None
-
-        df_tmp = pd.DataFrame({"val": s})
-        df_tmp.index = pd.to_datetime(df_tmp.index)
-        df_tmp = df_tmp.sort_index(ascending=True)
-
-        vals = df_tmp["val"].tail(4).astype(float).values
-        if len(vals) < 3:
-            return None
-
-        yearly_changes = []
-        for i in range(1, len(vals)):
-            prev = vals[i - 1]
-            curr = vals[i]
-            if prev > 0:
-                chg = ((curr - prev) / prev) * 100
-                yearly_changes.append(chg)
-
-        if not yearly_changes:
-            return None
-
-        return float(np.mean(yearly_changes))
-    except Exception:
-        return None
 
 def format_number(val, is_currency=True, currency="USD"):
     if val is None or pd.isna(val):
@@ -716,23 +689,41 @@ if ticker_input:
                         )
                     )
                     valid_cols = sorted([c for c in inc.columns if pd.notna(c)])
-                    if len(valid_cols) >= 4:
-                        col_latest, col_base = valid_cols[-1], valid_cols[-4]
+
+                    # Linijinei regresijai reikia bent 3 metų (taškų) istorijos
+                    if len(valid_cols) >= 3:
+                        x_vals = np.arange(len(valid_cols))
+
+                        # EPS arba Normalizuoto pelno trendas
+                        eps_growth_3y = None
+                        for cand in ["Normalized Income", "Net Income Continuous Operations", "Diluted EPS",
+                                     "Basic EPS"]:
+                            if cand in inc.index:
+                                y_eps = inc.loc[cand, valid_cols].fillna(0).astype(float).values
+                                slope_eps, _ = np.polyfit(x_vals, y_eps, 1)
+                                avg_eps = np.abs(np.mean(y_eps))
+                                if avg_eps > 0:
+                                    eps_growth_3y = (slope_eps / avg_eps) * 100
+                                break
+
+                        # Pajamų (Sales) trendas
+                        for cand in ["Total Revenue", "Operating Revenue"]:
+                            if cand in inc.index:
+                                y_rev = inc.loc[cand, valid_cols].fillna(0).astype(float).values
+                                slope_rev, _ = np.polyfit(x_vals, y_rev, 1)
+                                avg_rev = np.abs(np.mean(y_rev))
+                                if avg_rev > 0:
+                                    sales_growth_3y = (slope_rev / avg_rev) * 100
+                                break
+                    elif len(valid_cols) == 2:
+                        col_latest, col_base = valid_cols[-1], valid_cols[0]
                         for cand in ["Diluted EPS", "Basic EPS"]:
                             if cand in inc.index:
-                                eps_growth_3y = calc_trend_growth(inc.loc[cand])
+                                eps_growth_3y = calc_cagr(inc.loc[cand, col_base], inc.loc[cand, col_latest], 1)
                                 break
                         for cand in ["Total Revenue", "Operating Revenue"]:
                             if cand in inc.index:
-                                sales_growth_3y = calc_trend_growth(inc.loc[cand])
-                                break
-                        for cand in ["Total Revenue", "Operating Revenue"]:
-                            if cand in inc.index:
-                                sales_growth_3y = calc_cagr(
-                                    inc.loc[cand, col_base],
-                                    inc.loc[cand, col_latest],
-                                    3,
-                                )
+                                sales_growth_3y = calc_cagr(inc.loc[cand, col_base], inc.loc[cand, col_latest], 1)
                                 break
             except Exception:
                 pass
@@ -1054,7 +1045,11 @@ if ticker_input:
                         if eps_growth_3y is not None
                         else "N/A"
                     ),
-                    "Šaltinis / pastaba": "Metinis trendas",
+                    "Šaltinis / pastaba": (
+                        "Apskaičiuota (CAGR)"
+                        if eps_growth_3y is not None
+                        else "N/A - EPS bazinis/paskutinis metas neigiamas arba nulinis"
+                    ),
                 },
                 {
                     "Rodiklis": "3-Year Sales Growth Rate",
@@ -1063,7 +1058,7 @@ if ticker_input:
                         if sales_growth_3y is not None
                         else "N/A"
                     ),
-                    "Šaltinis / pastaba": "Metinis trendas",
+                    "Šaltinis / pastaba": "Apskaičiuota (CAGR)",
                 },
                 {
                     "Rodiklis": "Cash",
@@ -1635,7 +1630,7 @@ if ticker_input:
 
                     with st.chat_message("assistant"):
                         with st.spinner("Ieškoma informacijos..."):
-                            full_res = query_ai(user_query, chat_system_prompt, max_tokens=220)
+                            full_res = query_ai(user_query, chat_system_prompt, max_tokens=500)
                             st.markdown(full_res)
 
                 st.session_state[chat_key].append(
