@@ -159,6 +159,17 @@ st.markdown(
         border-color: #94A3B8 !important;
     }
 
+    div.stButton > button[kind="primary"] {
+        background: #2563EB !important;
+        color: #FFFFFF !important;
+        border: 1px solid #2563EB !important;
+    }
+
+    div.stButton > button[kind="primary"]:hover {
+        background: #1D4ED8 !important;
+        border-color: #1D4ED8 !important;
+    }
+
     [data-testid="stMetricValue"] {
         font-size: 1.85rem !important;
         font-weight: 500 !important;
@@ -207,14 +218,6 @@ st.sidebar.caption(
     "💡 Pirmasis įrašytas tickeris gauna pilną, išsamią analizę. "
     "Papildomi tickeriai (pvz. `GOOGL, MSFT, AAPL`) bus parodyti palyginimo lentelėje ir grafike."
 )
-
-PERIOD_OPTIONS = {
-    "1 mėnuo": "1mo",
-    "6 mėnesiai": "6mo",
-    "1 metai": "1y",
-    "5 metai": "5y",
-    "Max": "max",
-}
 
 sidebar_download_placeholder = st.sidebar.empty()
 
@@ -564,29 +567,6 @@ def style_main_metrics(df, price_val):
     return styles
 
 
-def style_price_change(df):
-    styles = pd.DataFrame(
-        "background-color: #ffffff; color: #0f172a;",
-        index=df.index,
-        columns=df.columns,
-    )
-    for idx, row in df.iterrows():
-        val_str = str(row["Pokytis %"])
-        num = parse_value(val_str)
-
-        if num is not None:
-            if num > 0:
-                styles.loc[idx, "Pokytis %"] = (
-                    "color: #15803d; font-weight: bold; background-color: #f0fdf4;"
-                )
-            elif num < 0:
-                styles.loc[idx, "Pokytis %"] = (
-                    "color: #b91c1c; font-weight: bold; background-color: #fef2f2;"
-                )
-
-    return styles
-
-
 def style_insider_df(df):
     return pd.DataFrame(
         "background-color: #ffffff; color: #0f172a;",
@@ -857,6 +837,21 @@ if ticker_input:
                     price_chg_abs = price - prev_close
                     price_chg_pct = (price_chg_abs / prev_close) * 100
 
+            # Apyvartos (Volume) pokytis nuo vidutinės apyvartos
+            volume_now = info.get("volume") or info.get("regularMarketVolume")
+            if (volume_now is None or pd.isna(volume_now)) and not hist_5y.empty:
+                volume_now = float(hist_5y["Volume"].iloc[-1])
+            avg_volume = info.get("averageVolume") or info.get("averageDailyVolume10Day")
+            volume_chg_pct = None
+            if (
+                volume_now is not None
+                and not pd.isna(volume_now)
+                and avg_volume is not None
+                and not pd.isna(avg_volume)
+                and avg_volume > 0
+            ):
+                volume_chg_pct = ((float(volume_now) - float(avg_volume)) / float(avg_volume)) * 100
+
             # After/Before hours kaina (jei Yahoo Finance ją teikia)
             market_state = info.get("marketState", "")
             post_price = info.get("postMarketPrice")
@@ -878,11 +873,15 @@ if ticker_input:
                 if pre_change is not None and pre_change_pct is not None:
                     extended_delta = f"{pre_change:+.2f} ({pre_change_pct:+.2f}%)"
 
+            header_col_widths = [3, 1]
             if extended_label:
-                header_col1, header_col2, header_col3 = st.columns([3, 1, 1])
-            else:
-                header_col1, header_col2 = st.columns([3, 1])
-                header_col3 = None
+                header_col_widths.append(1)
+            header_col_widths.append(1)
+            header_cols = st.columns(header_col_widths)
+            header_col1 = header_cols[0]
+            header_col2 = header_cols[1]
+            header_col3 = header_cols[2] if extended_label else None
+            header_col_vol = header_cols[-1]
 
             with header_col1:
                 st.subheader(f"{long_name} ({ticker_input})")
@@ -903,6 +902,21 @@ if ticker_input:
                         else None
                     ),
                 )
+            with header_col_vol:
+                st.metric(
+                    label="Apyvarta vs vidurkis",
+                    value=(
+                        format_number(volume_now, is_currency=False)
+                        if volume_now is not None and not pd.isna(volume_now)
+                        else "N/A"
+                    ),
+                    delta=(
+                        f"{volume_chg_pct:+.2f}%"
+                        if volume_chg_pct is not None
+                        else None
+                    ),
+                    help="Šiandienos/paskutinės sesijos prekybos apimtis, palyginta su vidutine apimtimi (Yahoo Finance - averageVolume).",
+                )
             if extended_label and header_col3 is not None:
                 with header_col3:
                     st.metric(
@@ -911,113 +925,176 @@ if ticker_input:
                         delta=extended_delta,
                     )
 
-            chart_placeholder = st.empty()
-            with st.container():
-                period_label = st.radio(
-                    "Kainos grafiko laikotarpis:",
-                    list(PERIOD_OPTIONS.keys()),
-                    index=3,
-                    horizontal=True,
-                    key="price_chart_period",
-                    label_visibility="collapsed",
-                )
-            selected_period = PERIOD_OPTIONS[period_label]
-            hist_display = (
-                hist_5y
-                if selected_period == "5y"
-                else fetch_history(ticker_input, selected_period)
-            )
-            if hist_display is None or hist_display.empty:
-                hist_display = hist_5y
+            # Pilna istorinė kainos serija grafikui (kad "All"/"Max" pasirinkimas
+            # rodytų visą turimą istoriją, o ne tik 5 metus)
+            hist_chart = fetch_history(ticker_input, "max")
+            if hist_chart is None or hist_chart.empty:
+                hist_chart = hist_5y
 
-            fig_price = go.Figure()
+            hist_chart_local = hist_chart.copy()
+            hist_chart_local.index = hist_chart_local.index.tz_localize(None)
+
+            close_series_clean = hist_chart_local["Close"].dropna()
+            last_date = hist_chart_local.index[-1]
+            first_date = hist_chart_local.index[0]
+            last_close = float(close_series_clean.iloc[-1]) if not close_series_clean.empty else None
+
+            period_defs = {
+                "1M": last_date - pd.DateOffset(months=1),
+                "6M": last_date - pd.DateOffset(months=6),
+                "YTD": pd.Timestamp(year=last_date.year, month=1, day=1),
+                "1Y": last_date - pd.DateOffset(years=1),
+                "5Y": last_date - pd.DateOffset(years=5),
+                "All": first_date,
+            }
+
+            # Radio pasirinkimas aiškiai pažymi aktyvų laikotarpį ir kiekvieną
+            # kartą iš naujo sugeneruoja grafiką su filtruotais duomenimis.
+            period_state_key = f"chart_period_{ticker_input}"
+            if period_state_key not in st.session_state:
+                st.session_state[period_state_key] = "All"
+
+            selected_period_label = st.radio(
+                "Pasirinkite laikotarpį:",
+                options=list(period_defs.keys()),
+                horizontal=True,
+                key=period_state_key,
+                label_visibility="collapsed",
+            )
+
+            selected_start = max(period_defs[selected_period_label], first_date)
+            hist_selected = hist_chart_local.loc[
+                hist_chart_local.index >= selected_start
+            ].copy()
+            if hist_selected.empty:
+                hist_selected = hist_chart_local.copy()
+
+            # Pasirinkto laikotarpio kainos pokytis % - naudojamas ženkliuke po grafiku
+            selected_pct = None
+            close_selected_clean = hist_selected["Close"].dropna()
+            if last_close is not None and not close_selected_clean.empty:
+                base_close = float(close_selected_clean.iloc[0])
+                if base_close > 0:
+                    selected_pct = ((last_close - base_close) / base_close) * 100
+
+            fig_price = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                row_heights=[0.72, 0.28],
+                vertical_spacing=0.03,
+            )
+
             fig_price.add_trace(
                 go.Scatter(
-                    x=hist_display.index,
-                    y=hist_display["Close"],
+                    x=hist_selected.index,
+                    y=hist_selected["Close"],
                     mode="lines",
                     name=f"Kaina ({cur})",
                     line=dict(color="#38bdf8", width=2),
-                )
+                    fill="tozeroy",
+                    fillcolor="rgba(56, 189, 248, 0.12)",
+                    customdata=hist_selected[["Open", "High", "Low"]].values,
+                    hovertemplate=(
+                        "<b>%{x|%Y-%m-%d}</b><br>"
+                        "Uždarymo: %{y:.2f}<br>"
+                        "Atidarymo: %{customdata[0]:.2f}<br>"
+                        "Aukščiausia: %{customdata[1]:.2f}<br>"
+                        "Žemiausia: %{customdata[2]:.2f}<extra></extra>"
+                    ),
+                ),
+                row=1,
+                col=1,
             )
+
+            fig_price.add_trace(
+                go.Bar(
+                    x=hist_selected.index,
+                    y=hist_selected["Volume"],
+                    name="Apyvarta",
+                    marker=dict(color="#64748B", opacity=0.65),
+                    hovertemplate="Apyvarta: %{y:,.0f}<extra></extra>",
+                ),
+                row=2,
+                col=1,
+            )
+
             fig_price.update_layout(
-                title=f"Kainos istorija ({period_label})",
                 paper_bgcolor="#0F172A",
                 plot_bgcolor="#0F172A",
                 font=dict(color="#FFFFFF"),
-                legend=dict(font=dict(color="#FFFFFF")),
-                margin=dict(l=20, r=20, t=40, b=20),
-                xaxis=dict(
-                    showgrid=True,
-                    gridcolor="#334155",
-                    title="Data",
-                    color="#FFFFFF",
-                ),
-                yaxis=dict(
-                    showgrid=True,
-                    gridcolor="#334155",
-                    title=f"Kaina ({cur})",
-                    color="#FFFFFF",
+                showlegend=False,
+                hovermode="x unified",
+                margin=dict(l=20, r=20, t=30, b=20),
+                hoverlabel=dict(
+                    bgcolor="#1E293B",
+                    bordercolor="#334155",
+                    font=dict(color="#FFFFFF"),
                 ),
             )
-            with chart_placeholder:
-                st.plotly_chart(fig_price, use_container_width=True)
 
-            st.divider()
+            fig_price.update_xaxes(
+                showgrid=True,
+                gridcolor="#334155",
+                color="#FFFFFF",
+                showspikes=True,
+                spikemode="across",
+                spikesnap="cursor",
+                spikedash="dot",
+                spikethickness=1,
+                spikecolor="#94A3B8",
+                row=1,
+                col=1,
+            )
+            fig_price.update_xaxes(
+                showgrid=True,
+                gridcolor="#334155",
+                color="#FFFFFF",
+                title="Data",
+                row=2,
+                col=1,
+            )
+            fig_price.update_yaxes(
+                showgrid=True,
+                gridcolor="#334155",
+                title=f"Kaina ({cur})",
+                color="#FFFFFF",
+                row=1,
+                col=1,
+            )
+            fig_price.update_yaxes(
+                showgrid=False,
+                title="Apyvarta",
+                color="#FFFFFF",
+                row=2,
+                col=1,
+            )
 
-            # 2 SEKCIJA: KAINOS POKYTIS
-            st.subheader("KAINOS POKYTIS")
-            df_price = pd.DataFrame()
-            if not hist_5y.empty and len(hist_5y) > 1:
-                hist_5y_local = hist_5y.copy()
-                hist_5y_local.index = hist_5y_local.index.tz_localize(None)
-                curr_p = price
-                now_dt = hist_5y_local.index[-1]
+            # Badge, rodantis pasirinkto laikotarpio kainos pokytį %
+            if selected_pct is not None:
+                badge_color = "#dc2626" if selected_pct < 0 else "#16a34a"
+                badge_text = f"<b>{selected_pct:+.2f}%</b>"
+            else:
+                badge_color = "#16a34a"
+                badge_text = "<b>N/A</b>"
 
-                def get_historical_price(days_back=None, ytd=False):
-                    target_dt = (
-                        pd.Timestamp(year=now_dt.year, month=1, day=1)
-                        if ytd
-                        else now_dt - pd.Timedelta(days=days_back)
-                    )
-                    sub = hist_5y_local[hist_5y_local.index <= target_dt]
-                    return (
-                        float(sub["Close"].iloc[-1])
-                        if not sub.empty
-                        else float(hist_5y_local["Close"].iloc[0])
-                    )
+            fig_price.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.01,
+                y=0.99,
+                xanchor="left",
+                yanchor="top",
+                text=badge_text,
+                showarrow=False,
+                font=dict(color="#FFFFFF", size=13),
+                bgcolor=badge_color,
+                bordercolor=badge_color,
+                borderwidth=1,
+                borderpad=6,
+            )
 
-                periods_data = [
-                    ("5y", float(hist_5y_local["Close"].iloc[0])),
-                    ("1y", get_historical_price(days_back=365)),
-                    ("YTD", get_historical_price(ytd=True)),
-                    ("6M", get_historical_price(days_back=182)),
-                    ("1M", get_historical_price(days_back=30)),
-                ]
-                df_price = pd.DataFrame(
-                    [
-                        {
-                            "Laikotarpis": label,
-                            "Kaina praeityje (USD)": (
-                                f"{past_p:.2f}"
-                                if isinstance(past_p, (int, float))
-                                else "N/A"
-                            ),
-                            "Pokytis %": (
-                                f"{((curr_p - past_p) / past_p) * 100:+.2f}%"
-                                if past_p and past_p > 0
-                                else "N/A"
-                            ),
-                        }
-                        for label, past_p in periods_data
-                    ]
-                )
-
-                st.dataframe(
-                    df_price.style.apply(style_price_change, axis=None),
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            st.plotly_chart(fig_price, use_container_width=True)
 
             st.divider()
 
@@ -1028,11 +1105,6 @@ if ticker_input:
             d_e = info.get("debtToEquity")
 
             main_metrics_data = [
-                {
-                    "Rodiklis": "PRICE",
-                    "Reikšmė": fmt_val(price),
-                    "Šaltinis / pastaba": "Yahoo Finance - currentPrice",
-                },
                 {
                     "Rodiklis": "Forward P/E",
                     "Reikšmė": fmt_val(info.get("forwardPE")),
