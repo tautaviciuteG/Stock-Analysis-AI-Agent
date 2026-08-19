@@ -600,6 +600,17 @@ def fetch_history(ticker: str, period: str):
     return yf.Ticker(ticker).history(period=period)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_intraday_history(ticker: str, period: str, interval: str):
+    """Trumpų laikotarpių duomenys su intraday kainomis ir apyvarta."""
+    return yf.Ticker(ticker).history(
+        period=period,
+        interval=interval,
+        # Yahoo Finance 1D/5D grafikuose rodo ir prieš-/po-rinkos sesijas.
+        prepost=True,
+    )
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_income_stmt(ticker: str):
     return yf.Ticker(ticker).income_stmt
@@ -940,6 +951,8 @@ if ticker_input:
             last_close = float(close_series_clean.iloc[-1]) if not close_series_clean.empty else None
 
             period_defs = {
+                "1D": last_date - pd.Timedelta(days=1),
+                "5D": last_date - pd.Timedelta(days=5),
                 "1M": last_date - pd.DateOffset(months=1),
                 "6M": last_date - pd.DateOffset(months=6),
                 "YTD": pd.Timestamp(year=last_date.year, month=1, day=1),
@@ -952,7 +965,7 @@ if ticker_input:
             # kartą iš naujo sugeneruoja grafiką su filtruotais duomenimis.
             period_state_key = f"chart_period_{ticker_input}"
             if period_state_key not in st.session_state:
-                st.session_state[period_state_key] = "All"
+                st.session_state[period_state_key] = "1D"
 
             selected_period_label = st.radio(
                 "Pasirinkite laikotarpį:",
@@ -962,41 +975,166 @@ if ticker_input:
                 label_visibility="collapsed",
             )
 
+            indicators_state_key = f"chart_indicators_{ticker_input}"
+            if indicators_state_key not in st.session_state:
+                st.session_state[indicators_state_key] = []
+            selected_indicators = st.session_state[indicators_state_key]
+
             selected_start = max(period_defs[selected_period_label], first_date)
+
+            # Rodikliai skaičiuojami iš pilnos kainų istorijos, todėl 50 d. ir
+            # 200 d. vidurkiai išlieka teisingi ir pasirinkus trumpą laikotarpį.
+            hist_chart_local["MA50"] = (
+                hist_chart_local["Close"].rolling(window=50, min_periods=1).mean()
+            )
+            hist_chart_local["MA200"] = (
+                hist_chart_local["Close"].rolling(window=200, min_periods=1).mean()
+            )
+            ema12 = hist_chart_local["Close"].ewm(span=12, adjust=False).mean()
+            ema26 = hist_chart_local["Close"].ewm(span=26, adjust=False).mean()
+            hist_chart_local["MACD"] = ema12 - ema26
+            hist_chart_local["MACD_Signal"] = (
+                hist_chart_local["MACD"].ewm(span=9, adjust=False).mean()
+            )
+            hist_chart_local["MACD_Hist"] = (
+                hist_chart_local["MACD"] - hist_chart_local["MACD_Signal"]
+            )
+
             hist_selected = hist_chart_local.loc[
                 hist_chart_local.index >= selected_start
             ].copy()
             if hist_selected.empty:
                 hist_selected = hist_chart_local.copy()
 
+            # 1D ir 5D režimams naudojami tankūs intraday duomenys. Taip
+            # grafike matomos prekybos sesijos kainos bei reali apyvarta.
+            chart_data = hist_selected.copy()
+            one_day_session_range = None
+            intraday_periods = {
+                # Imame 5 d. 1 min. srautą, kad Yahoo/yfinance tikrai grąžintų
+                # šiandienos pre-market duomenis; žemiau paliekama tik ši diena.
+                "1D": ("5d", "1m"),
+                "5D": ("5d", "5m"),
+            }
+            if selected_period_label in intraday_periods:
+                intraday_period, intraday_interval = intraday_periods[
+                    selected_period_label
+                ]
+                intraday_data = fetch_intraday_history(
+                    ticker_input,
+                    intraday_period,
+                    intraday_interval,
+                )
+                if intraday_data is not None and not intraday_data.empty:
+                    chart_data = intraday_data.copy()
+                    if selected_period_label == "1D":
+                        exchange_tz = chart_data.index.tz
+                        today_exchange = pd.Timestamp.now(tz=exchange_tz).date()
+                        today_data = chart_data[
+                            chart_data.index.date == today_exchange
+                        ]
+                        # Jei rinka dar nepateikė nė vieno šiandienos įrašo,
+                        # paliekamas paskutinis prieinamas prekybos seansas.
+                        if not today_data.empty:
+                            chart_data = today_data
+                            session_day = pd.Timestamp(today_exchange)
+                            one_day_session_range = [
+                                session_day.replace(hour=4, minute=0),
+                                session_day.replace(hour=20, minute=0),
+                            ]
+                    if getattr(chart_data.index, "tz", None) is not None:
+                        chart_data.index = chart_data.index.tz_localize(None)
+
+            # MACD skaičiuojamas iš rodomos serijos: intraday 1D/5D režime jis
+            # naudoja minučių kainas, o ilgesniuose laikotarpiuose – dienines.
+            chart_ema12 = chart_data["Close"].ewm(span=12, adjust=False).mean()
+            chart_ema26 = chart_data["Close"].ewm(span=26, adjust=False).mean()
+            chart_data["MACD"] = chart_ema12 - chart_ema26
+            chart_data["MACD_Signal"] = (
+                chart_data["MACD"].ewm(span=9, adjust=False).mean()
+            )
+            chart_data["MACD_Hist"] = (
+                chart_data["MACD"] - chart_data["MACD_Signal"]
+            )
+
             # Pasirinkto laikotarpio kainos pokytis % - naudojamas ženkliuke po grafiku
             selected_pct = None
-            close_selected_clean = hist_selected["Close"].dropna()
-            if last_close is not None and not close_selected_clean.empty:
+            close_selected_clean = chart_data["Close"].dropna()
+            chart_last_close = (
+                float(close_selected_clean.iloc[-1])
+                if not close_selected_clean.empty
+                else None
+            )
+            if chart_last_close is not None and not close_selected_clean.empty:
                 base_close = float(close_selected_clean.iloc[0])
                 if base_close > 0:
-                    selected_pct = ((last_close - base_close) / base_close) * 100
+                    selected_pct = ((chart_last_close - base_close) / base_close) * 100
+
+            if selected_period_label == "1D":
+                hover_date_format = "%H:%M"
+            elif selected_period_label == "5D":
+                hover_date_format = "%b %d, %H:%M"
+            else:
+                hover_date_format = "%Y-%m-%d"
+
+            show_relative_strength = (
+                "Relative Strength vs. S&P 500" in selected_indicators
+            )
+            show_macd = "MACD (12, 26, 9)" in selected_indicators
+            relative_strength = None
+
+            if show_relative_strength:
+                sp500_history = fetch_history("^GSPC", "max")
+                if sp500_history is not None and not sp500_history.empty:
+                    sp500_history = sp500_history.copy()
+                    if getattr(sp500_history.index, "tz", None) is not None:
+                        sp500_history.index = sp500_history.index.tz_localize(None)
+
+                    sp500_close = sp500_history["Close"].reindex(
+                        chart_data.index, method="ffill"
+                    ).bfill()
+                    valid_rs = sp500_close.notna() & chart_data["Close"].notna()
+
+                    if valid_rs.any():
+                        stock_normalized = (
+                            chart_data.loc[valid_rs, "Close"]
+                            / chart_data.loc[valid_rs, "Close"].iloc[0]
+                        )
+                        sp500_normalized = (
+                            sp500_close.loc[valid_rs]
+                            / sp500_close.loc[valid_rs].iloc[0]
+                        )
+                        relative_strength = stock_normalized / sp500_normalized * 100
+
+            chart_rows = 2 + int(relative_strength is not None) + int(show_macd)
+            rs_row = 3 if relative_strength is not None else None
+            macd_row = 3 + int(relative_strength is not None) if show_macd else None
+
+            if chart_rows == 2:
+                row_heights = [0.80, 0.20]
+            elif chart_rows == 3:
+                row_heights = [0.62, 0.14, 0.24]
+            else:
+                row_heights = [0.52, 0.13, 0.17, 0.18]
 
             fig_price = make_subplots(
-                rows=2,
+                rows=chart_rows,
                 cols=1,
                 shared_xaxes=True,
-                row_heights=[0.72, 0.28],
-                vertical_spacing=0.03,
+                row_heights=row_heights,
+                vertical_spacing=0.02,
             )
 
             fig_price.add_trace(
                 go.Scatter(
-                    x=hist_selected.index,
-                    y=hist_selected["Close"],
+                    x=chart_data.index,
+                    y=chart_data["Close"],
                     mode="lines",
                     name=f"Kaina ({cur})",
-                    line=dict(color="#38bdf8", width=2),
-                    fill="tozeroy",
-                    fillcolor="rgba(56, 189, 248, 0.12)",
-                    customdata=hist_selected[["Open", "High", "Low"]].values,
+                    line=dict(color="#38bdf8", width=2.4),
+                    customdata=chart_data[["Open", "High", "Low"]].values,
                     hovertemplate=(
-                        "<b>%{x|%Y-%m-%d}</b><br>"
+                        f"<b>%{{x|{hover_date_format}}}</b><br>"
                         "Uždarymo: %{y:.2f}<br>"
                         "Atidarymo: %{customdata[0]:.2f}<br>"
                         "Aukščiausia: %{customdata[1]:.2f}<br>"
@@ -1007,23 +1145,141 @@ if ticker_input:
                 col=1,
             )
 
-            fig_price.add_trace(
-                go.Bar(
-                    x=hist_selected.index,
-                    y=hist_selected["Volume"],
-                    name="Apyvarta",
-                    marker=dict(color="#64748B", opacity=0.65),
-                    hovertemplate="Apyvarta: %{y:,.0f}<extra></extra>",
-                ),
-                row=2,
-                col=1,
-            )
+            if (
+                "50-Day Moving Avg" in selected_indicators
+                and "MA50" in chart_data.columns
+            ):
+                fig_price.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MA50"],
+                        mode="lines",
+                        name="50-Day MA",
+                        line=dict(color="#FBBF24", width=2.2),
+                        hovertemplate="50-Day MA: %{y:.2f}<extra></extra>",
+                    ),
+                    row=1,
+                    col=1,
+                )
+
+            if (
+                "200-Day Moving Avg" in selected_indicators
+                and "MA200" in chart_data.columns
+            ):
+                fig_price.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MA200"],
+                        mode="lines",
+                        name="200-Day MA",
+                        line=dict(color="#C084FC", width=2.2),
+                        hovertemplate="200-Day MA: %{y:.2f}<extra></extra>",
+                    ),
+                    row=1,
+                    col=1,
+                )
+
+            if "Volume" in chart_data.columns:
+                volume_max = chart_data["Volume"].max()
+                if pd.notna(volume_max) and volume_max > 0:
+                    fig_price.add_trace(
+                        go.Bar(
+                            x=chart_data.index,
+                            y=chart_data["Volume"],
+                            name="Apyvarta",
+                            marker_color="#94A3B8",
+                            opacity=0.62,
+                            customdata=chart_data["Volume"],
+                            hovertemplate=(
+                                "Apyvarta: %{customdata:,.0f}<extra></extra>"
+                            ),
+                            showlegend=False,
+                        ),
+                        row=2,
+                        col=1,
+                    )
+
+            if relative_strength is not None:
+                fig_price.add_trace(
+                    go.Scatter(
+                        x=relative_strength.index,
+                        y=relative_strength,
+                        mode="lines",
+                        name="Relative Strength vs. S&P 500",
+                        line=dict(color="#22C55E", width=2),
+                        hovertemplate="RS: %{y:.2f}<extra></extra>",
+                    ),
+                    row=rs_row,
+                    col=1,
+                )
+                fig_price.add_hline(
+                    y=100,
+                    line_dash="dot",
+                    line_color="#94A3B8",
+                    row=rs_row,
+                    col=1,
+                )
+
+            if show_macd:
+                macd_colors = np.where(
+                    chart_data["MACD_Hist"] >= 0, "#10B981", "#EF4444"
+                )
+                fig_price.add_trace(
+                    go.Bar(
+                        x=chart_data.index,
+                        y=chart_data["MACD_Hist"],
+                        name="MACD histogram",
+                        marker_color=macd_colors,
+                        opacity=0.7,
+                        showlegend=False,
+                    ),
+                    row=macd_row,
+                    col=1,
+                )
+                fig_price.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MACD"],
+                        mode="lines",
+                        name="MACD",
+                        line=dict(color="#38BDF8", width=2),
+                    ),
+                    row=macd_row,
+                    col=1,
+                )
+                fig_price.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MACD_Signal"],
+                        mode="lines",
+                        name="Signal (9)",
+                        line=dict(color="#F59E0B", width=1.8),
+                    ),
+                    row=macd_row,
+                    col=1,
+                )
+                fig_price.add_hline(
+                    y=0,
+                    line_dash="dot",
+                    line_color="#94A3B8",
+                    row=macd_row,
+                    col=1,
+                )
 
             fig_price.update_layout(
                 paper_bgcolor="#0F172A",
                 plot_bgcolor="#0F172A",
                 font=dict(color="#FFFFFF"),
-                showlegend=False,
+                showlegend=bool(selected_indicators),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="left",
+                    x=0,
+                    font=dict(color="#FFFFFF", size=13),
+                    bgcolor="rgba(15, 23, 42, 0.80)",
+                ),
                 hovermode="x unified",
                 margin=dict(l=20, r=20, t=30, b=20),
                 hoverlabel=dict(
@@ -1050,8 +1306,12 @@ if ticker_input:
                 showgrid=True,
                 gridcolor="#334155",
                 color="#FFFFFF",
-                title="Data",
-                row=2,
+                title="Laikas" if selected_period_label in intraday_periods else "Data",
+                tickformat=(
+                    "%H:%M" if selected_period_label == "1D" else None
+                ),
+                range=one_day_session_range,
+                row=chart_rows,
                 col=1,
             )
             fig_price.update_yaxes(
@@ -1059,16 +1319,36 @@ if ticker_input:
                 gridcolor="#334155",
                 title=f"Kaina ({cur})",
                 color="#FFFFFF",
+                side="right",
                 row=1,
                 col=1,
             )
             fig_price.update_yaxes(
                 showgrid=False,
-                title="Apyvarta",
+                showticklabels=False,
+                title=None,
                 color="#FFFFFF",
                 row=2,
                 col=1,
             )
+            if relative_strength is not None:
+                fig_price.update_yaxes(
+                    title="RS",
+                    showgrid=True,
+                    gridcolor="#334155",
+                    color="#FFFFFF",
+                    row=rs_row,
+                    col=1,
+                )
+            if show_macd:
+                fig_price.update_yaxes(
+                    title="MACD",
+                    showgrid=True,
+                    gridcolor="#334155",
+                    color="#FFFFFF",
+                    row=macd_row,
+                    col=1,
+                )
 
             # Badge, rodantis pasirinkto laikotarpio kainos pokytį %
             if selected_pct is not None:
@@ -1095,6 +1375,137 @@ if ticker_input:
             )
 
             st.plotly_chart(fig_price, use_container_width=True)
+
+            # Indikatoriai pateikiami po grafiku, kad valdymo juosta būtų švari.
+            st.multiselect(
+                "Indikatoriai:",
+                [
+                    "50-Day Moving Avg",
+                    "200-Day Moving Avg",
+                    "Relative Strength vs. S&P 500",
+                    "MACD (12, 26, 9)",
+                ],
+                key=indicators_state_key,
+            )
+
+            # RS ir MACD jau rodomi bendrame grafike aukščiau.
+            if False and "Relative Strength vs. S&P 500" in selected_indicators:
+                sp500_history = fetch_history("^GSPC", "max")
+                if sp500_history is not None and not sp500_history.empty:
+                    sp500_history = sp500_history.copy()
+                    if getattr(sp500_history.index, "tz", None) is not None:
+                        sp500_history.index = sp500_history.index.tz_localize(None)
+
+                    sp500_close = sp500_history["Close"].reindex(
+                        chart_data.index, method="ffill"
+                    ).bfill()
+                    valid_rs = sp500_close.notna() & chart_data["Close"].notna()
+
+                    if valid_rs.any():
+                        stock_normalized = (
+                            chart_data.loc[valid_rs, "Close"]
+                            / chart_data.loc[valid_rs, "Close"].iloc[0]
+                        )
+                        sp500_normalized = (
+                            sp500_close.loc[valid_rs] / sp500_close.loc[valid_rs].iloc[0]
+                        )
+                        relative_strength = stock_normalized / sp500_normalized * 100
+
+                        fig_rs = go.Figure()
+                        fig_rs.add_trace(
+                            go.Scatter(
+                                x=relative_strength.index,
+                                y=relative_strength,
+                                mode="lines",
+                                name=f"{ticker_input} / S&P 500",
+                                line=dict(color="#22C55E", width=2),
+                            )
+                        )
+                        fig_rs.add_hline(
+                            y=100,
+                            line_dash="dot",
+                            line_color="#94A3B8",
+                        )
+                        fig_rs.update_layout(
+                            title="Santykinis stiprumas vs. S&P 500",
+                            paper_bgcolor="#0F172A",
+                            plot_bgcolor="#0F172A",
+                            font=dict(color="#FFFFFF"),
+                            showlegend=False,
+                            margin=dict(l=20, r=20, t=45, b=20),
+                        )
+                        fig_rs.update_xaxes(
+                            title="Data",
+                            showgrid=True,
+                            gridcolor="#334155",
+                            color="#FFFFFF",
+                        )
+                        fig_rs.update_yaxes(
+                            title="Santykinis stiprumas (100 = pradžia)",
+                            showgrid=True,
+                            gridcolor="#334155",
+                            color="#FFFFFF",
+                        )
+                        st.plotly_chart(fig_rs, use_container_width=True)
+                    else:
+                        st.info("Nepavyko gauti pakankamai S&P 500 duomenų palyginimui.")
+                else:
+                    st.info("Nepavyko gauti S&P 500 duomenų palyginimui.")
+
+            if False and "MACD (12, 26, 9)" in selected_indicators:
+                macd_colors = np.where(
+                    chart_data["MACD_Hist"] >= 0, "#10B981", "#EF4444"
+                )
+                fig_macd = go.Figure()
+                fig_macd.add_trace(
+                    go.Bar(
+                        x=chart_data.index,
+                        y=chart_data["MACD_Hist"],
+                        name="MACD histogram",
+                        marker_color=macd_colors,
+                        opacity=0.7,
+                    )
+                )
+                fig_macd.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MACD"],
+                        mode="lines",
+                        name="MACD",
+                        line=dict(color="#38BDF8", width=2),
+                    )
+                )
+                fig_macd.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MACD_Signal"],
+                        mode="lines",
+                        name="Signal (9)",
+                        line=dict(color="#F59E0B", width=1.7),
+                    )
+                )
+                fig_macd.add_hline(y=0, line_dash="dot", line_color="#94A3B8")
+                fig_macd.update_layout(
+                    title="MACD (12, 26, 9)",
+                    paper_bgcolor="#0F172A",
+                    plot_bgcolor="#0F172A",
+                    font=dict(color="#FFFFFF"),
+                    legend=dict(font=dict(color="#FFFFFF")),
+                    margin=dict(l=20, r=20, t=45, b=20),
+                    barmode="relative",
+                )
+                fig_macd.update_xaxes(
+                    title="Data",
+                    showgrid=True,
+                    gridcolor="#334155",
+                    color="#FFFFFF",
+                )
+                fig_macd.update_yaxes(
+                    showgrid=True,
+                    gridcolor="#334155",
+                    color="#FFFFFF",
+                )
+                st.plotly_chart(fig_macd, use_container_width=True)
 
             st.divider()
 
