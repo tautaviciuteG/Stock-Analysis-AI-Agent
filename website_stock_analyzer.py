@@ -196,6 +196,10 @@ st.markdown(
         background: #FFFFFF !important;
         padding: 1rem !important;
     }
+    
+    [data-testid="stSidebarCollapseButton"] {
+        display: none !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -590,12 +594,12 @@ def validate_ticker(ticker: str) -> bool:
         return False
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=15, show_spinner=False)
 def fetch_info(ticker: str):
     return yf.Ticker(ticker).info or {}
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=15, show_spinner=False)
 def fetch_history(ticker: str, period: str):
     return yf.Ticker(ticker).history(period=period)
 
@@ -642,6 +646,7 @@ if ticker_input:
             f"❌ Tickeris **{ticker_input}** nerastas arba šiuo metu neturi rinkos duomenų."
         )
         st.stop()
+
 
     with st.spinner(f"Renkami ir skaičiuojami {ticker_input} duomenys..."):
         try:
