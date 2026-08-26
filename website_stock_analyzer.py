@@ -260,16 +260,6 @@ api_key = st.sidebar.text_input("Įveskite Mistral API Raktą", type="password")
 # Užfiksuotas vienintelis modelis (be galimybės keisti sąsajoje)
 SELECTED_MODEL = "mistral-large-latest"
 
-# Chat pokalbiams naudojame greitesnį/lengvesnį modelį - trumpiems atsakymams
-# kokybės skirtumas praktiškai nejuntamas, bet atsakymo laikas žymiai
-# trumpesnis nei su "large" modeliu. Pilnai AI analizei (didesnis, sudėtingesnis
-# tekstas) toliau naudojamas SELECTED_MODEL (large).
-SELECTED_CHAT_MODEL = "mistral-small-latest"
-
-# Kiek paskutinių chat žinučių siunčiame kaip kontekstą Mistral API.
-# Riboja prompt dydį, kad ilgi pokalbiai neatšaltų ir neuždelstų atsakymo.
-MAX_CHAT_HISTORY_MESSAGES = 8
-
 st.sidebar.markdown(
     """
 🔑 **Kaip gauti API raktą?**  
@@ -297,25 +287,15 @@ def query_ai(
     system_prompt: str = "",
     max_tokens: int = 300,
     include_chat_history: bool = True,
-    model: str = None,
 ) -> str:
     """Išsiunčia užklausą į Mistral AI chat completions API.
 
     Naudoja pokalbio istoriją iš st.session_state, kad AI atsimintų ankstesnius
-    klausimus tos pačios sesijos metu. Istorija apribota iki paskutinių
-    MAX_CHAT_HISTORY_MESSAGES žinučių, kad ilgame pokalbyje prompt neaugtų be
-    ribų (tai tiesiogiai lėtina API atsakymo laiką ir gali greičiau atsitrenkti
-    į rate limitą). Be automatinio retry - viena klaida iškart parodoma
-    vartotojui su aiškiu paaiškinimu.
-
-    model: jei nenurodyta, naudojamas SELECTED_MODEL (didelis, kokybiškesnis,
-    bet lėtesnis modelis - tinka pilnai AI analizei). Interaktyviam chat'ui
-    kviečianti pusė gali perduoti SELECTED_CHAT_MODEL (mažesnis, greitesnis).
+    klausimus tos pačios sesijos metu. Be automatinio retry - viena klaida iškart
+    parodoma vartotojui su aiškiu paaiškinimu.
     """
     if not api_key:
         return "⚠️ Šoninėje juostoje įveskite savo **Mistral API Raktą**."
-
-    active_model = model or SELECTED_MODEL
 
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
@@ -328,13 +308,11 @@ def query_ai(
         messages.append({"role": "system", "content": system_prompt})
 
     # Pridedame pokalbio istoriją iš sesijos būsenos - RAKTAS PRIKLAUSO NUO
-    # DABARTINIO TICKERIO, kad skirtingų akcijų pokalbiai nesimaišytų.
-    # Siunčiame tik paskutines N žinutes, kad prompt neaugtų be ribų.
+    # DABARTINIO TICKERIO, kad skirtingų akcijų pokalbiai nesimaišytų
     if include_chat_history:
         chat_key = f"chat_messages_{ticker_input}"
         if chat_key in st.session_state:
-            recent_history = st.session_state[chat_key][-MAX_CHAT_HISTORY_MESSAGES:]
-            for msg in recent_history:
+            for msg in st.session_state[chat_key]:
                 messages.append({
                     "role": msg["role"],
                     "content": msg["content"]
@@ -345,21 +323,14 @@ def query_ai(
         messages.append({"role": "user", "content": prompt})
 
     payload = {
-        "model": active_model,
+        "model": SELECTED_MODEL,
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": 0.3,
     }
 
     try:
-        # Timeout priklauso nuo prašomo atsakymo ilgio: trumpam chat atsakymui
-        # (max_tokens~500) 30s pakanka, bet ilgai AI analizei (max_tokens~2000)
-        # generavimas gali realiai užtrukti ilgiau, todėl fiksuotas mažas
-        # timeout (30s) čia klaidingai nutraukdavo dar tebevykstančią, sėkmingą
-        # užklausą. Skaičiuojame apytiksliai: ~0.05s/tokenui + 15s bazė, su
-        # 90s viršutine riba apsaugai nuo "pakibimo".
-        dynamic_timeout = min(90, 15 + max_tokens * 0.05)
-        res = requests.post(url, headers=headers, json=payload, timeout=dynamic_timeout)
+        res = requests.post(url, headers=headers, json=payload, timeout=90)
 
         if res.status_code == 200:
             data = res.json()
@@ -376,7 +347,7 @@ def query_ai(
             )
         elif res.status_code == 429:
             return (
-                f"⚠️ **Viršytas „{active_model}\" užklausų limitas (429).**\n\n"
+                f"⚠️ **Viršytas „{SELECTED_MODEL}\" užklausų limitas (429).**\n\n"
                 "Mistral nemokamas planas turi griežtą per-sekundę limitą "
                 "(paprastai 1-2 užklausos/sek.). Palaukite kelias sekundes ir bandykite dar kartą. "
                 "Jei tai kartojasi nuolat, patikrinkite savo limitus "
@@ -385,132 +356,13 @@ def query_ai(
         elif res.status_code == 422:
             return (
                 f"⚠️ **Netinkama užklausa (422).**\n\n"
-                f"Galimai modelis „{active_model}\" neegzistuoja arba yra rašybos klaida. "
+                f"Galimai modelis „{SELECTED_MODEL}\" neegzistuoja arba yra rašybos klaida. "
                 f"Atsakymas: {res.text}"
             )
         else:
             return f"⚠️ API Klaida ({res.status_code}): {res.text}"
     except Exception as e:
         return f"❌ Nepavyko pasiekti Mistral API. Klaida: {e}"
-
-
-def query_ai_stream(
-    prompt: str,
-    system_prompt: str = "",
-    max_tokens: int = 500,
-    include_chat_history: bool = True,
-    model: str = None,
-):
-    """Kaip query_ai, bet grąžina generatorių, kuris atiduoda atsakymą dalimis
-    (SSE srautu), kai tik Mistral juos sugeneruoja - o ne laukia viso atsakymo
-    pabaigos. Naudojama chat'e su st.write_stream, kad tekstas pradėtų rodytis
-    žymiai anksčiau (perceived latency mažėja, net jei bendras generavimo
-    laikas nepakinta).
-
-    Klaidos atveju generatorius atiduoda vieną klaidos pranešimą (tą patį
-    formatą kaip query_ai) ir baigiasi.
-    """
-    if not api_key:
-        yield "⚠️ Šoninėje juostoje įveskite savo **Mistral API Raktą**."
-        return
-
-    active_model = model or SELECTED_MODEL
-
-    url = "https://api.mistral.ai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key.strip()}",
-        "Content-Type": "application/json",
-    }
-
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-
-    if include_chat_history:
-        chat_key = f"chat_messages_{ticker_input}"
-        if chat_key in st.session_state:
-            recent_history = st.session_state[chat_key][-MAX_CHAT_HISTORY_MESSAGES:]
-            for msg in recent_history:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
-
-    if not messages or messages[-1]["content"] != prompt:
-        messages.append({"role": "user", "content": prompt})
-
-    payload = {
-        "model": active_model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.3,
-        "stream": True,
-    }
-
-    dynamic_timeout = min(90, 15 + max_tokens * 0.05)
-
-    try:
-        with requests.post(
-            url, headers=headers, json=payload, timeout=dynamic_timeout, stream=True
-        ) as res:
-            if res.status_code != 200:
-                # Klaidų šakos - naudojame tą patį pranešimų formatą kaip query_ai
-                if res.status_code == 401:
-                    yield (
-                        "⚠️ **Neteisingas Mistral API raktas (401).**\n\n"
-                        "Patikrinkite, ar raktas nukopijuotas tiksliai (be tarpų ar papildomų simbolių) "
-                        "iš [console.mistral.ai](https://console.mistral.ai/api-keys)."
-                    )
-                elif res.status_code == 429:
-                    yield (
-                        f"⚠️ **Viršytas „{active_model}\" užklausų limitas (429).**\n\n"
-                        "Mistral nemokamas planas turi griežtą per-sekundę limitą "
-                        "(paprastai 1-2 užklausos/sek.). Palaukite kelias sekundes ir bandykite dar kartą. "
-                        "Jei tai kartojasi nuolat, patikrinkite savo limitus "
-                        "[console.mistral.ai](https://console.mistral.ai/) → Limits skiltyje."
-                    )
-                elif res.status_code == 422:
-                    yield (
-                        f"⚠️ **Netinkama užklausa (422).**\n\n"
-                        f"Galimai modelis „{active_model}\" neegzistuoja arba yra rašybos klaida. "
-                        f"Atsakymas: {res.text}"
-                    )
-                else:
-                    yield f"⚠️ API Klaida ({res.status_code}): {res.text}"
-                return
-
-            got_any_content = False
-            for raw_line in res.iter_lines(decode_unicode=True):
-                if not raw_line:
-                    continue
-                if not raw_line.startswith("data:"):
-                    continue
-
-                data_str = raw_line[len("data:"):].strip()
-                if data_str == "[DONE]":
-                    break
-
-                try:
-                    import json as _json
-                    chunk = _json.loads(data_str)
-                except Exception:
-                    continue
-
-                choices = chunk.get("choices", [])
-                if not choices:
-                    continue
-
-                delta = choices[0].get("delta", {})
-                piece = delta.get("content")
-                if piece:
-                    got_any_content = True
-                    yield piece
-
-            if not got_any_content:
-                yield "Nepavyko sugeneruoti atsakymo."
-
-    except Exception as e:
-        yield f"❌ Nepavyko pasiekti Mistral API. Klaida: {e}"
 
 
 def calc_cagr(start_val, end_val, periods=3):
@@ -816,87 +668,6 @@ def fetch_insider_transactions(ticker: str):
 def fetch_dividends_history(ticker: str):
     """Traukia PILNĄ istorinį dividendų mokėjimų sąrašą (data + suma vienai akcijai)."""
     return yf.Ticker(ticker).dividends
-
-
-# ------------------------------------------------------------------------------
-# CHAT SEKCIJA (izoliuota su @st.fragment)
-# ------------------------------------------------------------------------------
-# @st.fragment leidžia šitai chat sekcijai persikrauti NEPRIKLAUSOMAI nuo
-# likusio puslapio. Be šito, kiekvienas chat žinutės išsiuntimas kviesdavo
-# st.rerun(), kuris iš naujo vykdydavo VISĄ skriptą - t.y. iš naujo piešdavo
-# kainos grafiką (su MACD/RS subplots), insider prekybos grafiką, financials
-# grafiką ir t.t. Tai buvo pagrindinė chat "pristabdymo" priežastis (ne pats
-# Mistral API). Reikalinga streamlit>=1.37 versija.
-@st.fragment
-def render_chat_section(ticker_input: str, context_summary: str):
-    chat_key = f"chat_messages_{ticker_input}"
-    if chat_key not in st.session_state:
-        st.session_state[chat_key] = []
-
-    for message in st.session_state[chat_key]:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Konteineris, į kurį nauji klausimai ir atsakymai įdedami virš formos
-    chat_container = st.container()
-
-    with st.form(key=f"chat_form_{ticker_input}", clear_on_submit=True):
-        user_query = st.text_input(
-            f"Paklausk ko nors apie {ticker_input}..."
-        )
-        send = st.form_submit_button("Siųsti")
-
-    if send and user_query.strip():
-        st.session_state[chat_key].append(
-            {"role": "user", "content": user_query}
-        )
-
-        chat_system_prompt = (
-            "Tu esi patyręs finansų analitikas ir bendro pobūdžio AI asistentas, "
-            "kalbantis lietuviškai. Atsakinėk į BET KOKIUS vartotojo klausimus: "
-            "apie šią konkrečią akciją, finansus, investavimą ar kitas temas.\n\n"
-            "SVARBU - atsakymo stilius: būk KUO GLAUSTESNIS. Atsakyk tiesiai į "
-            "klausimą, be įžangų ('Žinoma, štai...'), be pasikartojimų, be ilgų "
-            "paaiškinimų, jei jų nereikalauja pats klausimas. Paprastam faktiniam "
-            "klausimui (data, suma, taip/ne) - užtenka 1-2 sakinių. Sudėtingesniam "
-            "klausimui naudok trumpus punktus, ne pastraipas. Nekartok klausimo "
-            "savo atsakyme.\n\n"
-            f"Apie šią akciją turi šiuos duomenis iš Yahoo Finance:\n"
-            f"{context_summary}\n\n"
-            "Kai klausimas susijęs su šia akcija, PIRMIAUSIA naudok aukščiau pateiktus "
-            "tikslius duomenis (ypač dividendų mokėjimų istoriją, kur datos TIKSLIOS). "
-            "Jei klausiama apie ko nors, ko nėra pateiktuose duomenyse (pvz. pajamų "
-            "suskirstymą pagal produktų segmentus ar geografinius regionus), atsakyk "
-            "trumpai naudodamasis savo bendrosiomis žiniomis, bet aiškiai pažymėk, kad "
-            "tai apytikslė informacija, o ne patvirtinti Yahoo Finance duomenys."
-        )
-
-        with chat_container:
-            with st.chat_message("user"):
-                st.markdown(user_query)
-
-            with st.chat_message("assistant"):
-                # Streaming: tekstas rodomas dalimis, kai tik Mistral juos
-                # sugeneruoja, o ne laukiama viso atsakymo pabaigos - subjektyviai
-                # jaučiasi žymiai greičiau. Naudojamas SELECTED_CHAT_MODEL
-                # (mažesnis/greitesnis modelis) vietoje SELECTED_MODEL, nes
-                # trumpiems chat atsakymams kokybės skirtumas nežymus, o
-                # atsakymo laikas sutrumpėja.
-                full_res = st.write_stream(
-                    query_ai_stream(
-                        user_query,
-                        chat_system_prompt,
-                        max_tokens=500,
-                        model=SELECTED_CHAT_MODEL,
-                    )
-                )
-
-        st.session_state[chat_key].append(
-            {"role": "assistant", "content": full_res}
-        )
-        # scope="fragment" - persikrauna TIK ši fragmento dalis, o ne visas
-        # puslapis (kainos grafikas, insider grafikas ir kt. lieka nepaliesti).
-        st.rerun(scope="fragment")
 
 
 # ------------------------------------------------------------------------------
@@ -1719,6 +1490,125 @@ if ticker_input:
                 key=indicators_state_key,
             )
 
+            # RS ir MACD jau rodomi bendrame grafike aukščiau.
+            if False and "Relative Strength vs. S&P 500" in selected_indicators:
+                sp500_history = fetch_history("^GSPC", "max")
+                if sp500_history is not None and not sp500_history.empty:
+                    sp500_history = sp500_history.copy()
+                    if getattr(sp500_history.index, "tz", None) is not None:
+                        sp500_history.index = sp500_history.index.tz_localize(None)
+
+                    sp500_close = sp500_history["Close"].reindex(
+                        chart_data.index, method="ffill"
+                    ).bfill()
+                    valid_rs = sp500_close.notna() & chart_data["Close"].notna()
+
+                    if valid_rs.any():
+                        stock_normalized = (
+                                chart_data.loc[valid_rs, "Close"]
+                                / chart_data.loc[valid_rs, "Close"].iloc[0]
+                        )
+                        sp500_normalized = (
+                                sp500_close.loc[valid_rs] / sp500_close.loc[valid_rs].iloc[0]
+                        )
+                        relative_strength = stock_normalized / sp500_normalized * 100
+
+                        fig_rs = go.Figure()
+                        fig_rs.add_trace(
+                            go.Scatter(
+                                x=relative_strength.index,
+                                y=relative_strength,
+                                mode="lines",
+                                name=f"{ticker_input} / S&P 500",
+                                line=dict(color="#22C55E", width=2),
+                            )
+                        )
+                        fig_rs.add_hline(
+                            y=100,
+                            line_dash="dot",
+                            line_color="#94A3B8",
+                        )
+                        fig_rs.update_layout(
+                            title="Santykinis stiprumas vs. S&P 500",
+                            paper_bgcolor="#0F172A",
+                            plot_bgcolor="#0F172A",
+                            font=dict(color="#FFFFFF"),
+                            showlegend=False,
+                            margin=dict(l=20, r=20, t=45, b=20),
+                        )
+                        fig_rs.update_xaxes(
+                            title="Data",
+                            showgrid=True,
+                            gridcolor="#334155",
+                            color="#FFFFFF",
+                        )
+                        fig_rs.update_yaxes(
+                            title="Santykinis stiprumas (100 = pradžia)",
+                            showgrid=True,
+                            gridcolor="#334155",
+                            color="#FFFFFF",
+                        )
+                        st.plotly_chart(fig_rs, use_container_width=True)
+                    else:
+                        st.info("Nepavyko gauti pakankamai S&P 500 duomenų palyginimui.")
+                else:
+                    st.info("Nepavyko gauti S&P 500 duomenų palyginimui.")
+
+            if False and "MACD (12, 26, 9)" in selected_indicators:
+                macd_colors = np.where(
+                    chart_data["MACD_Hist"] >= 0, "#10B981", "#EF4444"
+                )
+                fig_macd = go.Figure()
+                fig_macd.add_trace(
+                    go.Bar(
+                        x=chart_data.index,
+                        y=chart_data["MACD_Hist"],
+                        name="MACD histogram",
+                        marker_color=macd_colors,
+                        opacity=0.7,
+                    )
+                )
+                fig_macd.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MACD"],
+                        mode="lines",
+                        name="MACD",
+                        line=dict(color="#38BDF8", width=2),
+                    )
+                )
+                fig_macd.add_trace(
+                    go.Scatter(
+                        x=chart_data.index,
+                        y=chart_data["MACD_Signal"],
+                        mode="lines",
+                        name="Signal (9)",
+                        line=dict(color="#F59E0B", width=1.7),
+                    )
+                )
+                fig_macd.add_hline(y=0, line_dash="dot", line_color="#94A3B8")
+                fig_macd.update_layout(
+                    title="MACD (12, 26, 9)",
+                    paper_bgcolor="#0F172A",
+                    plot_bgcolor="#0F172A",
+                    font=dict(color="#FFFFFF"),
+                    legend=dict(font=dict(color="#FFFFFF")),
+                    margin=dict(l=20, r=20, t=45, b=20),
+                    barmode="relative",
+                )
+                fig_macd.update_xaxes(
+                    title="Data",
+                    showgrid=True,
+                    gridcolor="#334155",
+                    color="#FFFFFF",
+                )
+                fig_macd.update_yaxes(
+                    showgrid=True,
+                    gridcolor="#334155",
+                    color="#FFFFFF",
+                )
+                st.plotly_chart(fig_macd, use_container_width=True)
+
             st.divider()
 
             # 3 SEKCIJA: PAGRINDINIAI RODIKLIAI
@@ -2286,9 +2176,61 @@ if ticker_input:
             st.markdown("---")
             st.markdown("#### 💬 Užduokite klausimą agentui")
 
-            # Chat sekcija izoliuota @st.fragment dekoratoriumi (žr. aukščiau) -
-            # jos persikrovimas NEBEPERKRAUS viso puslapio (grafikų, lentelių ir kt.)
-            render_chat_section(ticker_input, context_summary)
+            chat_key = f"chat_messages_{ticker_input}"
+            if chat_key not in st.session_state:
+                st.session_state[chat_key] = []
+
+            for message in st.session_state[chat_key]:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+
+            # Konteineris, į kurį nauji klausimai ir atsakymai įdedami virš formos
+            chat_container = st.container()
+
+            with st.form(key=f"chat_form_{ticker_input}", clear_on_submit=True):
+                user_query = st.text_input(
+                    f"Paklausk ko nors apie {ticker_input}..."
+                )
+                send = st.form_submit_button("Siųsti")
+
+            if send and user_query.strip():
+                st.session_state[chat_key].append(
+                    {"role": "user", "content": user_query}
+                )
+
+                chat_system_prompt = (
+                    "Tu esi patyręs finansų analitikas ir bendro pobūdžio AI asistentas, "
+                    "kalbantis lietuviškai. Atsakinėk į BET KOKIUS vartotojo klausimus: "
+                    "apie šią konkrečią akciją, finansus, investavimą ar kitas temas.\n\n"
+                    "SVARBU - atsakymo stilius: būk KUO GLAUSTESNIS. Atsakyk tiesiai į "
+                    "klausimą, be įžangų ('Žinoma, štai...'), be pasikartojimų, be ilgų "
+                    "paaiškinimų, jei jų nereikalauja pats klausimas. Paprastam faktiniam "
+                    "klausimui (data, suma, taip/ne) - užtenka 1-2 sakinių. Sudėtingesniam "
+                    "klausimui naudok trumpus punktus, ne pastraipas. Nekartok klausimo "
+                    "savo atsakyme.\n\n"
+                    f"Apie šią akciją turi šiuos duomenis iš Yahoo Finance:\n"
+                    f"{context_summary}\n\n"
+                    "Kai klausimas susijęs su šia akcija, PIRMIAUSIA naudok aukščiau pateiktus "
+                    "tikslius duomenis (ypač dividendų mokėjimų istoriją, kur datos TIKSLIOS). "
+                    "Jei klausiama apie ko nors, ko nėra pateiktuose duomenyse (pvz. pajamų "
+                    "suskirstymą pagal produktų segmentus ar geografinius regionus), atsakyk "
+                    "trumpai naudodamasis savo bendrosiomis žiniomis, bet aiškiai pažymėk, kad "
+                    "tai apytikslė informacija, o ne patvirtinti Yahoo Finance duomenys."
+                )
+
+                with chat_container:
+                    with st.chat_message("user"):
+                        st.markdown(user_query)
+
+                    with st.chat_message("assistant"):
+                        with st.spinner("Ieškoma informacijos..."):
+                            full_res = query_ai(user_query, chat_system_prompt, max_tokens=500)
+                            st.markdown(full_res)
+
+                st.session_state[chat_key].append(
+                    {"role": "assistant", "content": full_res}
+                )
+                st.rerun()
 
         except Exception as e:
             st.error(f"Klaida apdorojant duomenis: {e}")
