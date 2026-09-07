@@ -579,6 +579,8 @@ def style_main_metrics(df, price_val):
                 is_good = True
             elif metric == "Total Debt/Equity" and num <= 50:
                 is_good = True
+            elif metric == "Price to Book Value (P/B)" and 0 < num < 3:
+                is_good = True
             elif metric == "ROE" and num >= 20:
                 is_good = True
             elif metric == "MGMT owns" and num > 1.0:
@@ -1665,9 +1667,9 @@ if ticker_input:
                     "Šaltinis / pastaba": "Yahoo Finance - debtToEquity",
                 },
                 {
-                    "Rodiklis": "Book Value Per Share",
-                    "Reikšmė": fmt_val(info.get("bookValue")),
-                    "Šaltinis / pastaba": "Yahoo Finance - bookValue",
+                    "Rodiklis": "Price to Book Value (P/B)",
+                    "Reikšmė": fmt_val(info.get("priceToBook")),
+                    "Šaltinis / pastaba": "Yahoo Finance - priceToBook",
                 },
                 {
                     "Rodiklis": "ROE",
