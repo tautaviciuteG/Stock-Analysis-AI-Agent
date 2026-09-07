@@ -258,7 +258,7 @@ st.sidebar.header("🤖 AI Agentas (Mistral AI)")
 api_key = st.sidebar.text_input("Įveskite Mistral API Raktą", type="password")
 
 # Užfiksuotas vienintelis modelis (be galimybės keisti sąsajoje)
-SELECTED_MODEL = "mistral-large-latest"
+SELECTED_MODEL = "ministral-8b-2512"
 
 st.sidebar.markdown(
     """
